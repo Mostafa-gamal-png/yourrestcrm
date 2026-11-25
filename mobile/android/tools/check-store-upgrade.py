@@ -75,5 +75,17 @@ for mode in ['Route', 'ContinuousRoute']:
     con.execute('DELETE FROM points WHERE id=?', ('older-unknown-point',))
     check(con.execute(capability_sql).fetchone() is None, 'Fully bound outbox cannot become safe after actual acknowledgment')
     check(con.execute('SELECT body FROM points WHERE id=?', ('old-point',)).fetchone() == (good,), 'Surviving point payload changed')
+    if continuous:
+        # Version 3 (app 1.0.16): onUpgrade from 1 or 2 ends with createHeld, which only adds the held tables; the outbox stays as it was.
+        upgrade = block(source, 'public void onUpgrade(')
+        check(upgrade.rstrip().endswith('createHeld(db);') and 'if(oldVersion==1){' in upgrade and 'newVersion!=3' in upgrade, 'Version 3 does not upgrade 1 and 2 through createHeld')
+        held = re.findall(r'db\.execSQL\("((?:\\.|[^"\\])*)"\)', block(source, 'static void createHeld('))
+        check(len(held) == 5 and all(json.loads('"' + sql + '"').startswith('CREATE ') for sql in held), 'createHeld is not five additive CREATE statements')
+        check('createHeld(db);' in block(source, 'public void onCreate('), 'A new install does not create the held tables')
+        before = {table: con.execute('SELECT * FROM ' + table + ' ORDER BY rowid').fetchall() for table in ['meta', 'points', 'gaps', 'days']}
+        for sql in held: con.execute(json.loads('"' + sql + '"'))
+        check({table: con.execute('SELECT * FROM ' + table + ' ORDER BY rowid').fetchall() for table in before} == before, 'The version 3 upgrade changed the outbox')
+        check([row[0] for row in con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'held_%' ORDER BY name")] == ['held_days', 'held_gaps', 'held_points'], 'The held tables are missing after the upgrade')
+        check(con.execute('SELECT count(*) FROM held_points').fetchone() == (0,) and con.execute('SELECT count(*) FROM held_gaps').fetchone() == (0,), 'The upgrade held evidence by itself')
     con.close()
 print(f'Native SQLite upgrade: {checks} checks passed (real SQLite, no Android device migration verification)')

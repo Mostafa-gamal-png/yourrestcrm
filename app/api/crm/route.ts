@@ -25,7 +25,7 @@ import {capacityEditIsDirect,keepAbsentCapacity,withCapacityOnly} from '@/lib/cu
 import {CUSTOMER_DECORATIONS} from '@/lib/crm-context-records';
 import {keepAbsentContacts} from '@/lib/customer-contacts';
 import {carryRetiredClassification,changedClassification,keepAbsentClassification,CLASSIFICATION_REFUSED} from '@/lib/customer-classification';
-import {isFieldRole,isMarketingRole} from '@/lib/roles';
+import {isFieldRole,isMarketingRole,trackingRole} from '@/lib/roles';
 export const dynamic='force-dynamic';
 export async function GET(){try{
  const c=await context({load:'directory'}),scope=salesScopeMemberIds(c.members,c.me),ids=new Set(c.visible.map(r=>r.id));
@@ -91,6 +91,14 @@ async function saveRecord(c:Awaited<ReturnType<typeof context>>,body:Record<stri
    const old=c.members.find(x=>x.id===m.id);if(!old)throw new CRMError('المستخدم غير موجود');
    const conflict=()=>Response.json({error:'تغيّرت بيانات المستخدم أو صلاحياتك. حمّل أحدث البيانات وراجعها قبل الحفظ.',code:'MEMBER_CONFLICT'},{status:409});
    if(typeof body.memberSnapshot!=='string'||body.memberSnapshot!==memberEditToken(old))return conflict();
+   // A representative's phone compares its enrolled region scope and role with the account's. From app 1.0.16 a change holds what the phone
+   // had not uploaded and uploads it to the earlier scope while recording goes on; the administrator is told first all the same (an older
+   // app stops until it updates, and the points reach the earlier scope only), and saves with «الحفظ رغم ذلك».
+   if(isFieldRole(old.role)&&(regionScope(old)!==m.regionScope||trackingRole(old.role)!==trackingRole(m.role))&&body.confirmTrackingPending!==true){
+    const device=await c.db.prepare("SELECT data FROM crm_member_devices WHERE member_id=? AND platform='android-app'").bind(old.id).first<{data:string}>();
+    let points=0,gaps=0;try{const report=JSON.parse(device?.data||'{}');points=Math.max(0,Math.floor(Number(report.pendingCount)||0));gaps=Math.max(0,Math.floor(Number(report.pendingGapCount)||0));}catch{points=0;gaps=0;}
+    if(points+gaps>0)return Response.json({error:`حسب آخر تقرير من هاتف هذا المستخدم، عليه ${points} نقطة و${gaps} انقطاع من خط السير لم تُرفع بعد. إذا غيّرت المنطقة أو الدور الآن تُحفظ على الهاتف وتُرفع على المنطقة السابقة، ويستمر التسجيل على الجديدة (من إصدار التطبيق 1.0.16). الأفضل الانتظار حتى تُرفع، أو اختر «الحفظ رغم ذلك».`,code:'MEMBER_TRACKING_PENDING',pendingCount:points,pendingGapCount:gaps},{status:409});
+   }
    if(old.userId&&old.email!==m.email.toLowerCase())throw new CRMError('لا يمكن تغيير بريد حساب مرتبط بتسجيل الدخول');
    // Guard the row again inside the write: another admin may save after context().
    const targetGuard="name=? AND email=? AND role=? AND branch=? AND COALESCE(supervisor_id,'')=? AND region_scope=? AND active=? AND target=? AND auth_version=?";

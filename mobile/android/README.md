@@ -1,4 +1,12 @@
-# Yourrest CRM Android 1.0.15 (versionCode 16)
+# Yourrest CRM Android 1.0.16 (versionCode 17)
+
+## A changed region or role in 1.0.16
+
+Version 1.0.16 answers the owner's report of 2026-11-25: a marketing officer's account was made on 2026-11-19 with «كل المناطق» and later saved with the five regions ticked one by one. For the app that is another region scope, and 1.0.15 stopped there: it said «تغيرت أذونات الحساب؛ محفوظ على الجهاز 856 نقطة و67 انقطاع من المنطقة السابقة», kept the points, refused «تفعيل التتبع», and the system, which needs tracking, stayed closed to him.
+
+When the server's region scope or role for the signed-in account differs from the one the phone enrolled with and points or gaps wait on the phone, the continuous tracker no longer stops. `ContinuousRouteStore.holdForChangedAccount` moves every queued point, gap and day, unchanged and in one transaction, into the held tables (`held_points`, `held_gaps`, `held_days`, store version 3) under the scope and owner they were captured with; the outbox and its account data are then empty, and `refreshAccount` enrolls the new scope at once when the phone was enrolled and the account is still a representative (otherwise «تفعيل التتبع» does). Enrollment does the same when it meets the old scope first.
+
+Held evidence is uploaded after the outbox, three requests a pass (`drainHeld`), only for the owner it was captured for, to days of its own scope: `/api/mobile-route` with `held: true` makes a closed day of that scope only when the account already has a route day of it, and stores the points without their customer binding. It is never relabeled to the new scope. A refusal waits a day (`TrackingFailurePolicy.heldRefused`), a network failure ends the pass, and neither touches collection, the outbox or the account; only the server's acknowledgment deletes held evidence. The page shows «نقاط من منطقة سابقة لحسابك محفوظة على الجهاز وتُرفع على منطقتها» while some remain (`heldCount`, `heldGapCount`, `heldNotice`, `heldError` in the status). The legacy manual tracker of supervisors and managers is unchanged.
 
 ## No more white screen in 1.0.15
 

@@ -123,7 +123,7 @@ if (framework && fs.existsSync(framework)) {
 
 // ---- 6. Source guards: the version, the manifest, the release notes, the site the camera serves, the documents.
 const gradle = read('mobile/android/app/build.gradle'), manifest = read('mobile/android/app/src/main/AndroidManifest.xml');
-eq([gradle.match(/versionCode\s+(\d+)/)?.[1], gradle.match(/versionName\s+'([^']+)'/)?.[1]], ['16', '1.0.15'], 'the app is 1.0.15 (16)');
+ok(Number(gradle.match(/versionCode\s+(\d+)/)?.[1]) >= 16 && /^1\.0\.(1[5-9]|[2-9]\d)$/.test(gradle.match(/versionName\s+'([^']+)'/)?.[1] || ''), 'the app is 1.0.15 (16) or later (1.0.16 keeps the white-screen panel and the camera)');
 eq([...manifest.matchAll(/uses-permission android:name="android\.permission\.([A-Z_]+)"/g)].map(match => match[1]).sort(),
   ['ACCESS_BACKGROUND_LOCATION', 'ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'ACCESS_NETWORK_STATE', 'FOREGROUND_SERVICE', 'FOREGROUND_SERVICE_LOCATION', 'INTERNET', 'POST_NOTIFICATIONS', 'RECEIVE_BOOT_COMPLETED', 'REQUEST_INSTALL_PACKAGES'], 'no permission is added: no CAMERA');
 ok(manifest.includes('<provider android:name=".CameraPhotoProvider" android:authorities="org.yourrest.crm.camera" android:exported="false" android:grantUriPermissions="true" />'), 'the camera\'s provider: not exported, per-URI grants');
@@ -144,7 +144,7 @@ const sw = read('public/sw.js');
 ok(sw.includes("if (request.mode === 'navigate')") && sw.includes('return await fetch(request);') && sw.includes('await cache.match(fallback)'), 'the site\'s service worker answers a failed navigation with its offline shell, so WebView reports no error and the panel stays away');
 // The documents.
 const readme = read('mobile/android/README.md'), guide = read('docs/OPERATIONS-DEVELOPMENT-GUIDE-AR.md'), changelog = read('docs/CHANGELOG-HISTORY.md'), checksDoc = read('tests/CHECKS.md');
-ok(readme.startsWith('# Yourrest CRM Android 1.0.15 (versionCode 16)') && readme.includes('LoadFailureRules') && readme.includes('CameraPhotoProvider'), 'the Android README names the version and what it brings');
+ok(/^# Yourrest CRM Android 1\.0\.(1[5-9]|[2-9]\d) \(versionCode (1[6-9]|[2-9]\d)\)/.test(readme) && readme.includes('LoadFailureRules') && readme.includes('CameraPhotoProvider'), 'the Android README names the version and what it brings');
 ok(guide.indexOf('## 9-أو.') > guide.indexOf('## 9-أه.') && guide.indexOf('## 9-أو.') < guide.indexOf('## 10.'), 'the guide\'s section 9-أو closes chapter 9');
 ok(changelog.indexOf('1.0.15') > 0 && changelog.indexOf('1.0.15') < changelog.indexOf('## «صور القالب»'), 'the release history starts with 1.0.15');
 ok(checksDoc.includes('`node tests/webview-load-android.mjs`') && checksDoc.includes('`node tests/webview-load-probe-browser.mjs`'), 'tests/CHECKS.md lists both tests');

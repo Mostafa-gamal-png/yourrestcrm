@@ -44,4 +44,22 @@ user('linked');const oldIdentity={...globalThis.testUser},oldAuth=raw('linked').
 const ownerBody=await edit();for(const id of ['target','supervisor','manager','service','regional-admin']){user(id);await post(ownerBody,403);}
 user('admin-two');const protectedBody=await edit('target',{name:'Forbidden after demotion'}),beforeDenied=raw('target');race=()=>sql.prepare("UPDATE crm_members SET role='rep' WHERE id='admin-two'").run();await post(protectedBody,409);eq(raw('target'),beforeDenied,'Actor permission is rechecked inside the write');
 user('owner');for(const id of ['manager','supervisor']){user(id);const result=await read();eq(result.members.some(member=>Object.hasOwn(member,'editToken')),false,'Non-admin projections expose no member edit snapshot');}user('owner');const created=await post({action:'member',data:{name:'New teammate',email:'new.teammate@yourrest.org',role:'rep',branch:'HQ',supervisorId:'',regionScope:'all',active:1,target:0}});eq(created.ok,true,'New account creation requires no stale-row token');eq(sql.prepare("SELECT COUNT(*) AS n FROM crm_members WHERE email='new.teammate@yourrest.org'").get().n,1);
+// App 1.0.16 (the owner, 2026-11-25): changing a representative's region scope or tracking role while the phone holds points tells the
+// administrator first; «الحفظ رغم ذلك» (confirmTrackingPending) saves. A name, a marketing role (tracked as a representative), a phone
+// with nothing waiting or a member who is not tracked saves at once.
+user('owner');insert('tracked','rep','all');insert('tracked-empty','rep','all');insert('desk','supervisor','all');
+const report=(id,points,gaps)=>sql.prepare("INSERT INTO crm_member_devices(member_id,platform,app_version,reported_at,data) VALUES(?,?,?,?,?) ON CONFLICT(member_id,platform) DO UPDATE SET data=excluded.data").run(id,'android-app','1.0.15',new Date().toISOString(),JSON.stringify({pendingCount:points,pendingGapCount:gaps}));
+report('tracked',856,67);report('tracked-empty',0,0);report('desk',5,0);
+const five='central,eastern,western,northern,southern',trackedBefore=raw('tracked');
+const warned=await post(await edit('tracked',{regionScope:five}),409);
+eq([warned.code,warned.pendingCount,warned.pendingGapCount],['MEMBER_TRACKING_PENDING',856,67],'a scope change over waiting points is answered with the counts');
+eq(warned.error.includes('856 نقطة و67 انقطاع')&&warned.error.includes('«الحفظ رغم ذلك»'),true,'the message names the counts and the choice');
+eq(raw('tracked'),trackedBefore,'nothing is saved before the choice');
+eq((await post(await edit('tracked',{role:'supervisor'}),409)).code,'MEMBER_TRACKING_PENDING','a representative leaving the tracked roles is warned too');
+await post(await edit('tracked',{name:'Renamed rep'}));eq(raw('tracked').name,'Renamed rep','a change the phone does not compare saves at once');
+await post(await edit('tracked',{role:'marketing'}));eq(raw('tracked').role,'marketing','a marketing officer is tracked as a representative: no warning');
+await post({...(await edit('tracked',{regionScope:five})),confirmTrackingPending:true});eq(raw('tracked').region_scope,five,'«الحفظ رغم ذلك» saves the new scope');
+await post(await edit('tracked-empty',{regionScope:'eastern'}));eq(raw('tracked-empty').region_scope,'eastern','a phone with nothing waiting is not in the way');
+await post(await edit('desk',{regionScope:'eastern'}));eq(raw('desk').region_scope,'eastern','a member who is not tracked is not warned');
+sql.prepare("UPDATE crm_member_devices SET data='not json' WHERE member_id='tracked'").run();await post(await edit('tracked',{regionScope:'western'}));eq(raw('tracked').region_scope,'western','an unreadable report does not block the save');
 console.log(JSON.stringify({ok:true,checks,coverage:'actual member update CAS, stale snapshots, interleaved writes, actor permission race, session revocation, admin-only snapshots, unchanged creation',productionData:false}));sql.close();

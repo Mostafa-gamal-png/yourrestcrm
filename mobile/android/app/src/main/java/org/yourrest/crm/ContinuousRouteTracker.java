@@ -32,7 +32,7 @@ final class ContinuousRouteTracker {
     private final String deviceId;
     private volatile boolean tracking=false;
     private volatile long generation=0;
-    private volatile String error="",syncError="";
+    private volatile String error="",syncError="",heldError="";
     private volatile boolean starting=false;
     private RouteTracker.Reply startReply;
     private long lastFlush;
@@ -79,13 +79,14 @@ final class ContinuousRouteTracker {
         JSONObject s=new JSONObject(),day=store.day(ContinuousPolicy.date(System.currentTimeMillis()));
         try{s.put("tracking",tracking).put("permission",RouteTracker.get(context).permission()?"granted":"denied")
                 .put("pendingCount",store.pendingCount()).put("pendingGapCount",store.pendingGapCount()).put("quarantinedCount",store.quarantinedCount()).put("quarantinedGapCount",store.quarantinedGapCount()).put("lastFixAt",optional(store.get("lastFixAt"))).put("accuracy",store.get("accuracy").isEmpty()?JSONObject.NULL:Double.parseDouble(store.get("accuracy")))
-                .put("error",error.isEmpty()?JSONObject.NULL:error).put("syncError",syncError.isEmpty()?JSONObject.NULL:syncError).put("quarantineNotice",optional(quarantineNotice())).put("dayId",day==null?JSONObject.NULL:day.opt("id"))
+                .put("error",error.isEmpty()?JSONObject.NULL:error).put("syncError",syncError.isEmpty()?JSONObject.NULL:syncError).put("quarantineNotice",optional(quarantineNotice())).put("heldCount",store.heldCount()).put("heldGapCount",store.heldGapCount()).put("heldNotice",optional(heldNotice())).put("heldError",optional(heldError)).put("heldEvidenceSupported",true).put("dayId",day==null?JSONObject.NULL:day.opt("id"))
                 .put("date",ContinuousPolicy.date(System.currentTimeMillis())).put("memberId",optional(store.get("memberId"))).put("regionScope",optional(store.get("regionScope"))).put("enrolledRole",optional(store.get("memberRole"))).put("stopId",optional(currentStopId()))
                 .put("workHoursSupported",true).put("trackingWindowActive",ContinuousPolicy.inWindow(System.currentTimeMillis())).put("trackingWindowStart","06:00").put("trackingWindowEnd","18:00").put("trackingTimeZone","Asia/Riyadh").put("nextTrackingWindowAt",RouteRules.iso(ContinuousPolicy.nextStart(System.currentTimeMillis())))
                 .put("directionsSupported",true).put("continuousSupported",true).put("enrolled",enabled()).put("backgroundPermission",backgroundGranted(context)?"granted":(context.getSharedPreferences("native",0).getBoolean("backgroundAsked",false)?"denied":"prompt"));
         }catch(Exception ignored){}NativeAppInfo.add(context,s);try{s.put("immutableBindingSupported",store.immutableBindings());}catch(Exception ignored){}return s;
     }
-    void addCapabilities(JSONObject state){try{state.put("workHoursSupported",true).put("trackingWindowActive",ContinuousPolicy.inWindow(System.currentTimeMillis())).put("trackingWindowStart","06:00").put("trackingWindowEnd","18:00").put("trackingTimeZone","Asia/Riyadh").put("nextTrackingWindowAt",RouteRules.iso(ContinuousPolicy.nextStart(System.currentTimeMillis()))).put("continuousSupported",true).put("enrolled",enabled()).put("backgroundPermission",backgroundGranted(context)?"granted":(context.getSharedPreferences("native",0).getBoolean("backgroundAsked",false)?"denied":"prompt"));}catch(Exception ignored){}}
+    void addCapabilities(JSONObject state){try{state.put("workHoursSupported",true).put("trackingWindowActive",ContinuousPolicy.inWindow(System.currentTimeMillis())).put("trackingWindowStart","06:00").put("trackingWindowEnd","18:00").put("trackingTimeZone","Asia/Riyadh").put("nextTrackingWindowAt",RouteRules.iso(ContinuousPolicy.nextStart(System.currentTimeMillis()))).put("continuousSupported",true).put("enrolled",enabled()).put("backgroundPermission",backgroundGranted(context)?"granted":(context.getSharedPreferences("native",0).getBoolean("backgroundAsked",false)?"denied":"prompt"))
+            .put("heldCount",store.heldCount()).put("heldGapCount",store.heldGapCount()).put("heldNotice",optional(heldNotice())).put("heldError",optional(heldError)).put("heldEvidenceSupported",true);}catch(Exception ignored){}}
     /** Informational only: quarantine never sets the collection/control error or stops enrollment. */
     private String quarantineNotice(){int points=store.quarantinedCount(),gaps=store.quarantinedGapCount();if(points+gaps==0)return "";return "بيانات قديمة ليوم الجمعة محفوظة على الجهاز ولا تُرفع: "+points+" نقطة و"+gaps+" انقطاع؛ تبقى محفوظة للمراجعة. تسجيل أيام العمل مستمر";}
     private static Object optional(String value){return value==null||value.isEmpty()?JSONObject.NULL:value;}
@@ -122,8 +123,17 @@ final class ContinuousRouteTracker {
             String oldRole=store.get("memberRole");if(oldRole.isEmpty())oldRole="rep";
             AccountRecoveryPolicy.Decision decision=AccountRecoveryPolicy.decide(store.get("memberId"),member,store.get("regionScope"),response.optString("regionScope"),oldRole,response.optString("memberRole"),store.count(),store.gapCount());
             if(decision==AccountRecoveryPolicy.Decision.WRONG_OWNER)throw new RouteApi.Failure(403,"النقاط المحفوظة تخص حسابًا سابقًا؛ راجع الإدارة أو سجّل الدخول بحسابها لرفعها");
-            if(decision==AccountRecoveryPolicy.Decision.PRESERVE_BLOCKED){disable(false);error="تغيرت أذونات الحساب؛ محفوظ على الجهاز "+store.count()+" نقطة و"+store.gapCount()+" انقطاع من المنطقة السابقة. راجع الإدارة؛ الزيارات والخرائط متاحة";finish(reply,error);return;}
-            if(decision==AccountRecoveryPolicy.Decision.RESET_EMPTY){disable(false);if(!store.resetEmptyContext())throw new Exception("ظهرت نقاط جديدة قبل مراجعة الأذونات؛ البيانات محفوظة");syncError="";}
+            if(decision==AccountRecoveryPolicy.Decision.PRESERVE_BLOCKED||decision==AccountRecoveryPolicy.Decision.RESET_EMPTY){
+                // 1.0.16: a changed scope or role never stops the representative. Queued evidence moves, unchanged, to the held tables under
+                // the scope it was captured with (uploaded to days of that scope, never relabeled); the empty outbox enrolls again at once.
+                boolean resume=store.enabled()&&"rep".equals(response.optString("memberRole"));
+                disable(false);
+                if(decision==AccountRecoveryPolicy.Decision.PRESERVE_BLOCKED){if(!store.holdForChangedAccount())throw new RouteApi.Failure(403,"تعذر حفظ النقاط السابقة على الجهاز بمنطقتها؛ النقاط محفوظة. راجع الإدارة");}
+                else if(!store.resetEmptyContext())throw new Exception("ظهرت نقاط جديدة قبل مراجعة الأذونات؛ البيانات محفوظة");
+                error="";syncError="";
+                if(resume){enroll(member,reply);return;}
+                finish(reply,null);return;
+            }
             else {synchronized(store){checkCurrent(expected,member);store.put("memberRole",response.optString("memberRole"));
                 if("rep".equals(response.optString("memberRole")))rememberAuthorization(response,expected,member);
                 store.put("loggedOut","0");
@@ -135,7 +145,9 @@ final class ContinuousRouteTracker {
         if(!member.equals(response.optString("memberId"))||!"rep".equals(response.optString("memberRole")))return;
         String scope=store.get("regionScope");if(scope.isEmpty()||scope.equals(response.optString("regionScope")))return;
         halt();store.put("enabled","0");
-        if(!store.resetEmptyContext())throw new RouteApi.Failure(403,"تغيرت منطقة الحساب؛ محفوظ "+store.count()+" نقطة و"+store.gapCount()+" انقطاع. راجع الإدارة قبل تفعيل منطقة جديدة؛ الزيارات والخرائط متاحة");
+        if(store.resetEmptyContext())return;
+        // Same owner (resetEmptyOwnerForAccount ran first): hold the earlier scope's evidence and enroll the new scope.
+        if(!member.equals(store.get("memberId"))||!store.holdForChangedAccount())throw new RouteApi.Failure(403,"تغيرت منطقة الحساب؛ محفوظ "+store.count()+" نقطة و"+store.gapCount()+" انقطاع. راجع الإدارة قبل تفعيل منطقة جديدة؛ الزيارات والخرائط متاحة");
     }
     void enroll(String member,RouteTracker.Reply reply){
         if(!RouteRules.identifier(member)||!consent()||!RouteTracker.get(context).permission()||!backgroundGranted(context)){finish(reply,"يلزم الموافقة على تسجيل الموقع من 6 صباحًا إلى 6 مساءً بتوقيت المملكة، ما عدا الجمعة والسماح بالموقع طوال الوقت");return;}
@@ -259,16 +271,52 @@ final class ContinuousRouteTracker {
         }
         synchronizeStop(auth);
         if(enabled())ensureCurrentWhenReady();
+        drainHeld(owner,expected,HELD_OPERATIONS);
         store.put("conflicts","0");
         if(expired==0)syncError="";
     }
     private void checkCurrent(long expected,String member)throws Exception{if(expected!=generation||!member.equals(store.get("memberId")))throw new Exception("تغير الحساب أو حالة التسجيل");}
     private void verifyDay(JSONObject response,JSONObject sent)throws Exception{JSONObject day=response.optJSONObject("day");if(day==null||!sent.optString("id").equals(day.optString("id"))||!sent.optString("date").equals(day.optString("date")))throw new RouteApi.Failure(409,"استجابة التسجيل لا تطابق اليوم المطلوب");}
+    static final int HELD_OPERATIONS=3;
+    /** Evidence held from an earlier scope or role (1.0.16), a few requests each pass after the outbox, to days of its own scope. A refusal
+     * waits a day and a failure ends the pass: held evidence never stops collection, the outbox or the account, and only an acknowledgment
+     * deletes it. Only the owner it was captured for uploads it. */
+    private void drainHeld(String owner,long expected,int operations){
+        for(int operation=0;operation<operations;operation++){
+            long now=System.currentTimeMillis();String[] group=store.firstHeld(owner,now);
+            if(group==null){store.heldPrune();if(store.heldCount()+store.heldGapCount()==0)heldError="";return;}
+            String scope=group[0],date=group[1];
+            try{
+                checkCurrent(expected,owner);
+                JSONObject day=ensureHeldDay(scope,date,owner);
+                if(day==null){store.heldRefused(scope,date,owner,now);heldError="لم يقبل الخادم يوم "+date+" من المنطقة السابقة؛ نقاطه محفوظة على الجهاز وتُعاد المحاولة غدًا";continue;}
+                JSONObject gap;JSONArray batch;
+                synchronized(store){gap=store.heldFirstGap(scope,date);batch=store.heldBatch(scope,date,gap==null?Long.MAX_VALUE:gap.getLong("at"));}
+                if(batch.length()>0){JSONObject result=api.call(request("samples",day).put("held",true).put("points",batch));verifyHeld(result,owner,day);int deleted=store.heldAck(batch,result.optJSONArray("acknowledgedIds"));store.heldDay(scope,result.getJSONObject("day"));if(deleted==0)throw new Exception("لم يؤكد الخادم حفظ نقاط المنطقة السابقة؛ ستتم إعادة المحاولة");}
+                else if(gap!=null){JSONObject result=api.call(request("gap",day).put("held",true).put("reason",gap.getString("reason")).put("at",RouteRules.iso(gap.getLong("at"))).put("stopId",JSONObject.NULL));verifyHeld(result,owner,day);store.heldDay(scope,result.getJSONObject("day"));store.heldDeleteGap(gap.getLong("id"));}
+                heldError="";
+            }catch(RouteApi.Failure failure){
+                if(TrackingFailurePolicy.heldRefused(failure.status)){store.heldRefused(scope,date,owner,now);heldError="لم يقبل الخادم نقاط "+date+" من المنطقة السابقة: "+message(failure)+" النقاط محفوظة على الجهاز وتُعاد المحاولة غدًا";continue;}
+                heldError=message(failure);return;
+            }catch(Exception failure){heldError=message(failure);return;}
+        }
+    }
+    private JSONObject ensureHeldDay(String scope,String date,String owner)throws Exception{
+        JSONObject day=store.heldDay(scope,date);if(day!=null)return day;
+        long first=ContinuousPolicy.windowStart(RouteRules.millis(date+"T12:00:00.000Z"));
+        JSONObject response=api.call(new JSONObject().put("action","begin").put("held",true).put("createKey",store.heldKey(scope,date,owner)).put("deviceId",deviceId).put("continuous",true).put("regionScope",scope).put("date",date).put("startedAt",RouteRules.iso(first)));
+        if(!owner.equals(response.optString("memberId")))throw new RouteApi.Failure(403,"الحساب الحالي لا يطابق صاحب نقاط المنطقة السابقة");
+        JSONObject result=response.optJSONObject("day");if(result==null)return null;
+        if(!date.equals(result.optString("date"))||!scope.equals(result.optString("regionScope"))||!owner.equals(result.optString("memberId"))||!deviceId.equals(result.optString("deviceId")))throw new RouteApi.Failure(409,"يوم المنطقة السابقة على الخادم لا يطابق النقاط المحفوظة");
+        store.heldDay(scope,result);return result;
+    }
+    private void verifyHeld(JSONObject response,String owner,JSONObject sent)throws Exception{if(!owner.equals(response.optString("memberId")))throw new RouteApi.Failure(403,"الحساب الحالي لا يطابق صاحب نقاط المنطقة السابقة");verifyDay(response,sent);}
+    private String heldNotice(){int points=store.heldCount(),gaps=store.heldGapCount();if(points+gaps==0)return "";return "نقاط من منطقة سابقة لحسابك محفوظة على الجهاز وتُرفع على منطقتها: "+points+" نقطة و"+gaps+" انقطاع. تسجيل خط السير مستمر";}
     private void scheduleSync(){if(!syncQueued.compareAndSet(false,true))return;worker.execute(()->{try{flushInternal(1);}catch(Exception failure){handleSync(failure);}finally{lastFlush=System.currentTimeMillis();syncQueued.set(false);changed();}});}
     private void synchronizeStop(JSONObject response){JSONObject active=response.optJSONObject("activeStop");String stop=store.get("stopId");if(!stop.isEmpty()&&(currentStopId()==null||active==null||!stop.equals(active.optString("id")))){synchronized(store){store.put("stopId","");store.put("destination","");}}}
     void flush(RouteTracker.Reply reply){worker.execute(()->{try{flushInternal(1);finish(reply,null);}catch(Exception failure){handleSync(failure);finish(reply,message(failure));}});}
     void tick(){
-        if(!ContinuousPolicy.inWindow(System.currentTimeMillis())){if(tracking)windowPaused();if(canResume()&&store.firstDate()!=null)scheduleSync();return;}
+        if(!ContinuousPolicy.inWindow(System.currentTimeMillis())){if(tracking)windowPaused();if(canResume()&&(store.firstDate()!=null||store.firstHeld(store.get("memberId"),System.currentTimeMillis())!=null))scheduleSync();return;}
         if(!canResume()){if(tracking){store.gap("permission_denied",System.currentTimeMillis());halt();error="توقف التسجيل بسبب تغيير أذونات النظام";changed();}return;}
         if(!collectionAuthorized()){if(tracking)pauseForAuthorization();authorizeService();return;}
         if(!tracking){authorizeService();return;}

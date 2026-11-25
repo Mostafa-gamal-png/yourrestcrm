@@ -302,6 +302,51 @@ eq((await mp(enrollmentBegin)).day.id,enrollmentDay.id);await mp({action:'sample
 member('riyadh-enrollment','rep','supervisor','eastern',1,'2026-09-19T22:00:00.000Z');user('riyadh-enrollment');const riyadhDevice=crypto.randomUUID();
 await mp({...begin(riyadhDevice),date:'2026-09-19',startedAt:'2026-09-19T14:00:00.000Z',regionScope:'eastern'},400);
 eq((await mp({...begin(riyadhDevice),date:'2026-09-20',startedAt:'2026-09-19T21:00:00.000Z',regionScope:'eastern'})).day.startedAt,'2026-09-20T03:00:00.000Z','Enrollment calendar boundary uses Saudi time and still observes 06:00 opening');
+// App 1.0.16 (the owner, 2026-11-25): an account saved with «كل المناطق» on 2026-11-19 and later with the five regions ticked one by one.
+// The phone holds the evidence of the earlier scope and uploads it with held:true to closed days of that scope; the ordinary begin still
+// refuses another scope, a held day needs a route day of its scope on this account, and its points carry no customer binding.
+clock=NativeDate.parse('2026-11-19T08:39:00.000Z');member('held-rep','rep','supervisor','all',1,'2026-11-19T08:36:00.000Z');user('held-rep');
+const heldDevice=crypto.randomUUID(),firstKey=crypto.randomUUID(),firstDay=(await mp({action:'begin',deviceId:heldDevice,createKey:firstKey,continuous:true,date:'2026-11-19',startedAt:'2026-11-18T21:00:00.000Z',regionScope:'all'})).day;
+eq([firstDay.regionScope,firstDay.endedAt],['all',null],'the first day of the account, under «كل المناطق», stays open');
+const heldPoint=(id,at,stopId=null)=>({id,capturedAt:at,latitude:24.7,longitude:46.7,accuracy:12,stopId});
+advance(6*60000);await mp({action:'samples',dayId:firstDay.id,deviceId:heldDevice,points:[heldPoint('first-1','2026-11-19T08:40:00.000Z')]});
+const five='central,eastern,western,northern,southern';sql.prepare('UPDATE crm_members SET region_scope=? WHERE id=?').run(five,'held-rep');
+clock=NativeDate.parse('2026-11-25T06:00:00.000Z');
+const heldBegin=(date,extra={})=>({action:'begin',held:true,deviceId:heldDevice,createKey:crypto.randomUUID(),continuous:true,date,startedAt:new Date(NativeDate.parse(date+'T00:00:00.000Z')-3*3600000).toISOString(),regionScope:'all',...extra});
+const saturday=heldBegin('2026-11-21');
+await mp({...saturday,held:undefined},403);
+await mp({...saturday,regionScope:'western'},403);
+await mp({...saturday,regionScope:'eastern,central'},400);await mp({...saturday,regionScope:'bogus'},400);
+await mp({...saturday,continuous:undefined},400);
+await mp({...heldBegin('2026-11-26')},400);
+await mp({...heldBegin('2026-11-18')},400);
+eq((await mp(heldBegin('2026-11-20'))).day,null,'a Friday has no held day, as it has no day');
+const heldStarted=await mp(saturday),heldDay=heldStarted.day;
+eq([heldStarted.regionScope,heldDay.regionScope,heldDay.date,heldDay.startedAt,heldDay.endedAt,heldDay.deviceId],[five,'all','2026-11-21','2026-11-21T03:00:00.000Z','2026-11-21T15:00:00.000Z',heldDevice],'a closed day of the earlier scope, beside the account\'s current scope');
+eq((await mp(saturday)).day.id,heldDay.id,'the same create key returns the same held day');
+await mp({...saturday,regionScope:five},409);
+await mp({...heldBegin('2026-11-21')},409);
+user('peer');await mp({...saturday},403);await mp({action:'samples',held:true,dayId:heldDay.id,deviceId:heldDevice,points:[heldPoint('peer-1','2026-11-21T07:00:00.000Z')]},404);user('held-rep');
+await mp({action:'samples',dayId:heldDay.id,deviceId:heldDevice,points:[heldPoint('sat-0','2026-11-21T07:00:00.000Z')]},403);
+const heldSamples=await mp({action:'samples',held:true,dayId:heldDay.id,deviceId:heldDevice,points:[heldPoint('sat-1','2026-11-21T07:00:00.000Z','some-stop'),heldPoint('sat-2','2026-11-21T07:01:00.000Z')]});
+eq(heldSamples.acknowledgedIds,['sat-1','sat-2'],'held points are acknowledged');
+eq(sql.prepare("SELECT point_id,stop_id FROM crm_mobile_route_points WHERE day_id=? ORDER BY captured_at").all(heldDay.id).map(row=>({...row})),[{point_id:'sat-1',stop_id:null},{point_id:'sat-2',stop_id:null}],'held points carry no customer binding');
+eq((await mp({action:'samples',held:true,dayId:heldDay.id,deviceId:heldDevice,points:[heldPoint('sat-1','2026-11-21T07:00:00.000Z','another-stop')]})).acknowledgedIds,['sat-1'],'a repeat is acknowledged again, whatever binding it carried');
+await mp({action:'samples',held:true,dayId:heldDay.id,deviceId:crypto.randomUUID(),points:[heldPoint('sat-3','2026-11-21T07:02:00.000Z')]},409);
+await mp({action:'samples',held:true,dayId:heldDay.id,deviceId:heldDevice,points:[heldPoint('sat-late','2026-11-22T07:00:00.000Z')]},400);
+eq((await mp({action:'samples',held:true,dayId:heldDay.id,deviceId:heldDevice,points:[heldPoint('sat-evening','2026-11-21T16:00:00.000Z')]})).ignoredIds,['sat-evening'],'a held point after 6 pm is acknowledged and ignored, as any');
+const heldGap=await mp({action:'gap',held:true,dayId:heldDay.id,deviceId:heldDevice,reason:'gps_unavailable',at:'2026-11-21T08:00:00.000Z',stopId:'some-stop'});
+eq(heldGap.day.gaps.filter(gap=>gap.reason==='gps_unavailable').length,1,'a held gap is recorded');
+await mp({action:'end',held:true,dayId:heldDay.id,deviceId:heldDevice},400);
+const reopened=await mp({action:'begin',held:true,deviceId:heldDevice,createKey:firstKey,continuous:true,date:'2026-11-19',regionScope:'all'});
+eq(reopened.day.id,firstDay.id,'the day the phone made before the change is found again by its create key');
+eq((await mp({action:'samples',held:true,dayId:firstDay.id,deviceId:heldDevice,points:[heldPoint('first-2','2026-11-19T09:00:00.000Z')]})).acknowledgedIds,['first-2'],'held points reach the day made before the change');
+const todayHeld=(await mp(heldBegin('2026-11-25'))).day;
+eq([todayHeld.endedAt,todayHeld.regionScope],['2026-11-25T06:00:00.000Z','all'],'today\'s held day ends now');
+const current=(await mp({action:'begin',deviceId:heldDevice,createKey:crypto.randomUUID(),continuous:true,date:'2026-11-25',startedAt:'2026-11-24T21:00:00.000Z',regionScope:five})).day;
+eq([current.regionScope,current.endedAt],[five,null],'the current scope\'s day opens beside the held one');
+eq(sql.prepare('SELECT COUNT(*) AS open FROM crm_mobile_route_days WHERE member_id=? AND ended_at IS NULL').get('held-rep').open,1,'one open day: held days never stay open (the earlier open day was closed by the new begin)');
+eq(sql.prepare('SELECT ended_at FROM crm_mobile_route_days WHERE id=?').get(firstDay.id).ended_at,'2026-11-19T15:00:00.000Z','the open day of 2026-11-19 is closed at its window end by today\'s begin');
 eq(sql.prepare('PRAGMA foreign_key_check').all(),[]);
 console.log(JSON.stringify({suite:'mobile-route',checks,passed:true}));
 

@@ -1,6 +1,8 @@
 package org.yourrest.crm;
 
-/** Changed server-authorized context can replace metadata only after all evidence is acknowledged. */
+/** Changed server-authorized context can replace metadata only after all evidence is acknowledged or held. PRESERVE_BLOCKED: queued evidence
+ * of the earlier context exists. The legacy tracker stops on it; the continuous tracker (1.0.16) moves that evidence unchanged to its held
+ * tables under the scope it was captured with and enrolls the new context at once (ContinuousRouteStore.holdForChangedAccount). */
 final class AccountRecoveryPolicy {
     enum Decision { UNCHANGED, RESET_EMPTY, PRESERVE_BLOCKED, WRONG_OWNER }
     static Decision decide(String owner,String authenticatedOwner,String oldScope,String scope,String oldRole,String role,int points,int gaps){

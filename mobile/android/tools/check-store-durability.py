@@ -117,6 +117,43 @@ public class StoreDurabilityCheck {
   try{legacyDisk.addPoint(point("too-large",at+1000,null).put("diagnosticPadding","x".repeat(2000000)),at+1000);}catch(RuntimeException expected){rejected=true;diagnostic=expected.getMessage();ok(expected.getCause()!=null,"Legacy storage diagnostic retains cause");}
   ok(diagnostic.equals("تعذر حفظ الموقع الجديد على الجهاز؛ الموقع الجديد لم يُحفظ، والنقاط السابقة محفوظة. راجع مساحة تخزين الجهاز"),"Actual legacy disk-full error distinguishes unsaved new fix from saved queue");
   ok(rejected&&legacyDisk.count()==1&&body(diskDb,"old").equals(oldBody)&&body(diskDb,"too-large")==null,"Real SQLite disk-full rollback preserves legacy evidence");ok(legacyDisk.lastCaptured()==at,"Legacy disk failure does not advance capture marker");diskDb.execSQL("PRAGMA max_page_count=1000000");legacyDisk.addPoint(point("after-disk-space",at+2000,null),at+2000);ok(legacyDisk.count()==2,"Legacy capture recovers after storage available");legacyDisk.close();
+  // 1.0.16: a changed scope or role moves queued evidence, unchanged, to the held tables under the scope and owner it was captured with.
+  java.io.File heldDir=new java.io.File(args[0],"held");heldDir.mkdir();ContinuousRouteStore h=new ContinuousRouteStore(new Context(heldDir.getPath()));
+  ok(!h.holdForChangedAccount(),"Evidence without an identity is never held");
+  h.put("memberId","owner-A");h.put("regionScope","all");h.put("memberRole","rep");h.put("enabled","1");
+  long d1=RouteRules.millis("2026-11-19T08:00:00.000Z"),d2=RouteRules.millis("2026-11-20T08:00:00.000Z");
+  JSONObject p1=point("p1",d1,"stop-A"),p2=point("p2",d1+60000,null),p3=point("p3",d2,"stop-B");h.point(p1,d1);h.point(p2,d1+60000);h.point(p3,d2);h.gap("gps_unavailable",d1+120000);
+  String key1=h.key("2026-11-19");h.day(new JSONObject().put("date","2026-11-19").put("id","day-1"));h.key("2026-11-20");h.key("2026-11-18");
+  String b1=body(h.getReadableDatabase(),"p1");
+  ok(h.holdForChangedAccount(),"Evidence of a known owner and scope is held");
+  ok(h.count()==0&&h.gapCount()==0&&h.get("memberId").isEmpty()&&h.get("regionScope").isEmpty()&&!h.enabled()&&h.day("2026-11-19")==null,"The outbox and its account data are empty after holding");
+  ok(h.resetEmptyContext(),"The empty outbox can enroll the new scope");
+  ok(h.heldCount()==3&&h.heldGapCount()==1,"Every point and gap is held");
+  try(Cursor c=h.getReadableDatabase().rawQuery("SELECT body,scope,member,captured,date FROM held_points WHERE id='p1'",null)){c.moveToFirst();ok(c.getString(0).equals(b1)&&c.getString(1).equals("all")&&c.getString(2).equals("owner-A")&&c.getLong(3)==d1&&c.getString(4).equals("2026-11-19"),"A held point keeps its exact payload, capture time, date, scope and owner");}
+  ok(scalar(h.getReadableDatabase(),"SELECT count(*) FROM held_days")==2,"Only the days with evidence are held (an empty day is not)");
+  long now=RouteRules.millis("2026-11-25T08:00:00.000Z");
+  String[] first=h.firstHeld("owner-A",now);ok(first!=null&&first[0].equals("all")&&first[1].equals("2026-11-19"),"The oldest held group comes first");
+  ok(h.firstHeld("owner-B",now)==null,"Another account never sees the held evidence");
+  ok(h.heldKey("all","2026-11-19","owner-A").equals(key1),"A held day keeps its create key, so the server finds the day it already made");
+  ok(h.heldDay("all","2026-11-19").getString("id").equals("day-1")&&h.heldDay("all","2026-11-20")==null,"A held day keeps the server day it had");
+  JSONArray hb=h.heldBatch("all","2026-11-19",Long.MAX_VALUE);ok(hb.length()==2&&hb.getJSONObject(0).getString("id").equals("p1")&&hb.getJSONObject(0).isNull("stopId")&&hb.getJSONObject(1).getString("id").equals("p2"),"A held batch is in capture order without the customer binding");
+  ok(body(h.getReadableDatabase(),"p1")==null&&h.heldCount()==3,"Reading a batch changes nothing");
+  try(Cursor c=h.getReadableDatabase().rawQuery("SELECT body FROM held_points WHERE id='p1'",null)){c.moveToFirst();ok(c.getString(0).equals(b1),"The stored payload keeps its binding");}
+  JSONObject hg=h.heldFirstGap("all","2026-11-19");ok(hg!=null&&hg.getString("reason").equals("gps_unavailable")&&hg.getLong("at")==d1+120000,"The held gap keeps its reason and time");
+  ok(h.heldBatch("all","2026-11-19",d1+30000).length()==1,"A batch stops before the group's first gap time");
+  ok(h.heldAck(hb,new JSONArray().put("unrelated"))==0&&h.heldCount()==3,"An unrelated acknowledgment deletes nothing");
+  ok(h.heldAck(new JSONArray().put(hb.getJSONObject(0)),new JSONArray().put("p1").put("p2"))==1&&h.heldCount()==2,"Only a sent and acknowledged point is deleted");
+  h.heldRefused("all","2026-11-19","owner-A",now);first=h.firstHeld("owner-A",now+1000);ok(first!=null&&first[1].equals("2026-11-20"),"A refused group waits and the next one comes");
+  first=h.firstHeld("owner-A",now+ContinuousRouteStore.HELD_RETRY_MS+1000);ok(first!=null&&first[1].equals("2026-11-19"),"A refused group is asked again after a day");
+  h.heldDay("all",new JSONObject().put("date","2026-11-19").put("id","day-1"));first=h.firstHeld("owner-A",now+1000);ok(first!=null&&first[1].equals("2026-11-19"),"A server day clears the refusal");
+  h.heldDeleteGap(hg.getLong("id"));h.heldAck(hb,new JSONArray().put("p2"));h.heldPrune();
+  ok(h.heldCount()==1&&h.heldGapCount()==0&&scalar(h.getReadableDatabase(),"SELECT count(*) FROM held_days")==1&&h.heldDay("all","2026-11-19")==null,"An emptied group loses its day; the others keep theirs");
+  h.put("memberId","owner-A");h.put("regionScope","central,eastern");h.point(point("p4",d2+60000,null),d2+60000);
+  ok(h.holdForChangedAccount()&&h.heldCount()==2&&h.count()==0,"A second change holds the next scope's evidence beside the first");
+  try(Cursor c=h.getReadableDatabase().rawQuery("SELECT scope FROM held_points ORDER BY captured",null)){c.moveToFirst();String a=c.getString(0);c.moveToNext();ok(a.equals("all")&&c.getString(0).equals("central,eastern"),"Each held point keeps the scope it was captured with");}
+  first=h.firstHeld("owner-A",now);ok(first[1].equals("2026-11-20")&&first[0].equals("all"),"Groups of one date come in a fixed scope order");
+  h.put("memberId","owner-A");h.put("regionScope","west");h.point(point("p5",d2+120000,null),d2+120000);ok(h.count()==1,"Collection continues in the outbox after holding");
+  h.close();h=new ContinuousRouteStore(new Context(heldDir.getPath()));ok(h.heldCount()==2&&h.count()==1,"Held evidence survives a process restart");h.close();
   System.out.println("Production Java stores + real SQLite: "+checks+" checks passed (Android APIs adapted; no device claim)");
  }
 }

@@ -56,6 +56,27 @@ public final class AccountRecoveryCheck {
         }
         check(activity.contains("case \"refreshAccount\":tracker.refreshAccount(input.optString(\"memberId\"),reply)"),"Verified foreground context recovery is not available");
         check(continuous.contains(".put(\"regionScope\",optional(store.get(\"regionScope\")))")&&continuous.contains(".put(\"enrolledRole\",optional(store.get(\"memberRole\")))"),"Cold reload cannot identify persisted context");
+        // 1.0.16: a changed scope or role holds the queued evidence (under the scope it was captured with) and enrolls again; never a delete.
+        String storeSource=Files.readString(source.resolve("ContinuousRouteStore.java")),hold=TripStartCheck.block(storeSource,"synchronized boolean holdForChangedAccount(");
+        check(hold.indexOf("if(scope.isEmpty()||member.isEmpty())return false;")<hold.indexOf("beginTransaction()"),"Evidence of an unknown owner or scope is held");
+        int copyPoints=hold.indexOf("INSERT OR IGNORE INTO held_points"),copyGaps=hold.indexOf("INSERT INTO held_gaps"),dropPoints=hold.indexOf("db.delete(\"points\""),success=hold.indexOf("setTransactionSuccessful()");
+        check(hold.indexOf("beginTransaction()")<copyPoints&&copyPoints<dropPoints&&copyGaps<dropPoints&&dropPoints<success&&hold.contains("finally{db.endTransaction();}"),"Held evidence is not copied before the outbox is emptied, in one transaction");
+        check(hold.contains("SELECT id,?,?,captured,date,body FROM points")&&hold.contains("SELECT ?,?,at,date,reason FROM gaps"),"A held point or gap loses its id, capture time, date, payload or reason");
+        String preserved=TripStartCheck.block(refresh,"if(decision==AccountRecoveryPolicy.Decision.PRESERVE_BLOCKED||decision==AccountRecoveryPolicy.Decision.RESET_EMPTY){");
+        int disabledAt=preserved.indexOf("disable(false)"),heldAt=preserved.indexOf("store.holdForChangedAccount()"),enrollAt=preserved.indexOf("enroll(member,reply)");
+        check(disabledAt>=0&&heldAt>disabledAt&&enrollAt>heldAt&&!preserved.contains("store.clear()")&&!preserved.contains("delete("),"A changed scope stops collection after holding, or enrolls before the evidence is held");
+        check(preserved.contains("boolean resume=store.enabled()&&\"rep\".equals(response.optString(\"memberRole\"))")&&preserved.indexOf("boolean resume")<disabledAt,"Enrollment resumes for an account that was not enrolled or is no longer a representative");
+        String recover=TripStartCheck.block(continuous,"private void recoverEmptyScopeForEnrollment(");
+        check(recover.indexOf("store.resetEmptyContext()")<recover.indexOf("holdForChangedAccount()")&&recover.contains("!member.equals(store.get(\"memberId\"))||!store.holdForChangedAccount()"),"Enrollment holds another owner's evidence or holds before trying the empty reset");
+        String heldDrain=TripStartCheck.block(continuous,"private void drainHeld(");
+        check(!heldDrain.contains("disable(")&&!heldDrain.contains("handle(")&&!heldDrain.contains("halt(")&&!heldDrain.contains("syncError")&&!heldDrain.contains("error="),"A held upload stops collection or reports an outbox failure");
+        check(!heldDrain.contains(".delete(")&&heldDrain.contains("store.heldAck(batch,result.optJSONArray(\"acknowledgedIds\"))")&&heldDrain.contains("store.heldDeleteGap(gap.getLong(\"id\"))"),"Held evidence is deleted without a server acknowledgment");
+        check(heldDrain.contains("TrackingFailurePolicy.heldRefused(failure.status)")&&heldDrain.contains("store.heldRefused(scope,date,owner,now)")&&heldDrain.contains("store.firstHeld(owner,now)"),"A refused held group is retried at once or another owner's group is uploaded");
+        check(heldDrain.contains(".put(\"held\",true)")&&TripStartCheck.block(continuous,"private JSONObject ensureHeldDay(").contains(".put(\"held\",true)")&&TripStartCheck.block(continuous,"private JSONObject ensureHeldDay(").contains("scope.equals(result.optString(\"regionScope\"))"),"A held upload is not marked held or accepts a day of another scope");
+        String flush=TripStartCheck.block(continuous,"private void flushInternal(int maxOperations)");
+        check(flush.indexOf("drainHeld(owner,expected,HELD_OPERATIONS)")>flush.indexOf("for(int operations=0;")&&flush.indexOf("verify(auth,owner)")<flush.indexOf("drainHeld("),"Held evidence uploads before the account is verified or ahead of the outbox");
+        check(TrackingFailurePolicy.heldRefused(400)&&TrackingFailurePolicy.heldRefused(403)&&TrackingFailurePolicy.heldRefused(409)&&!TrackingFailurePolicy.heldRefused(401)&&!TrackingFailurePolicy.heldRefused(429)&&!TrackingFailurePolicy.heldRefused(408)&&!TrackingFailurePolicy.heldRefused(500)&&!TrackingFailurePolicy.heldRefused(200),"A held refusal waits on a lost session, a busy server or a server error");
+        check(continuous.contains(".put(\"heldCount\",store.heldCount())")&&continuous.contains(".put(\"heldNotice\",optional(heldNotice()))"),"The page cannot see held evidence");
         System.out.println("Native account recovery: "+checks+" checks passed (actual policy and evidence guards; phone transitions unverified)");
     }
 }
