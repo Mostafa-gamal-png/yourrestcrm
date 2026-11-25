@@ -135,8 +135,10 @@ const notes = block => [...block.matchAll(/'((?:[^'\\]|\\.)*)'/g)].map(match => 
 const ar = notes(arBlock), en = notes(enBlock);
 ok(ar.length >= 1 && ar.length <= 5 && en.length === ar.length && [...ar, ...en].every(note => note.length <= 200), 'one to five notes of at most 200 characters, as many in English as in Arabic');
 ok(ar.every(note => /[؀-ۿ]/.test(note)) && en.every(note => !/[؀-ۿ]/.test(note)), 'Arabic notes and English notes');
-ok(ar.some(note => note.includes('الكاميرا')) && en.some(note => /camera/i.test(note)), 'the notes name the camera');
-ok(ar.some(note => note.includes('شاشة بيضاء') && note.includes('إعادة المحاولة')) && en.some(note => /white screen/i.test(note)), 'and the end of the white screen');
+// The update screen shows the notes of the newest release only: 1.0.16 names the region change (1.0.15's camera and white screen are in
+// the README and the release history, checked below).
+ok(ar.some(note => note.includes('منطقة') && note.includes('يستمر التسجيل')) && en.some(note => /region/i.test(note) && /continues/i.test(note)), 'the notes say a region change no longer stops recording');
+ok(ar.some(note => note.includes('المنطقة السابقة')) && en.some(note => /earlier region/i.test(note)), 'and where the points of the earlier region go');
 ok(ar.some(note => note.includes('أذونات جديدة')) && en.some(note => /no new permission/i.test(note)), 'and that no permission is asked');
 // The input the camera is for, and the offline shell the panel leaves to the site.
 ok(/type="file" accept="image\/\*" multiple hidden data-mold-photo-input/.test(read('app/customer-mold-photos.tsx')), '«صور القالب» is an image input of several photos (the camera or the gallery)');

@@ -99,7 +99,7 @@ ok(manifest.includes('<service android:name=".AlertCheckJob" android:permission=
 eq([...manifest.matchAll(/uses-permission android:name="android\.permission\.([A-Z_]+)"/g)].map(match => match[1]).sort(),
   ['ACCESS_BACKGROUND_LOCATION', 'ACCESS_COARSE_LOCATION', 'ACCESS_FINE_LOCATION', 'ACCESS_NETWORK_STATE', 'FOREGROUND_SERVICE', 'FOREGROUND_SERVICE_LOCATION', 'INTERNET', 'POST_NOTIFICATIONS', 'RECEIVE_BOOT_COMPLETED', 'REQUEST_INSTALL_PACKAGES'], 'no permission is added');
 const gradle = fs.readFileSync(path.join(root, 'mobile/android/app/build.gradle'), 'utf8');
-eq([gradle.match(/versionCode\s+(\d+)/)?.[1], gradle.match(/versionName\s+'([^']+)'/)?.[1]], ['16', '1.0.15'], 'the app is 1.0.15 (16): 1.0.14 brought the complaint alerts, 1.0.15 keeps them (tests/webview-load-android.mjs checks what it adds)');
+eq([gradle.match(/versionCode\s+(\d+)/)?.[1], gradle.match(/versionName\s+'([^']+)'/)?.[1]], ['17', '1.0.16'], 'the app is 1.0.16 (17): 1.0.14 brought the complaint alerts, 1.0.15 keeps them (tests/webview-load-android.mjs checks what it adds), 1.0.16 a region change that no longer stops tracking');
 // The release notes the publish script writes: at most five of at most 200 characters, in both languages. They describe the release
 // being published (1.0.15 since 2026-11-19: tests/webview-load-android.mjs checks what they say).
 const publish = fs.readFileSync(path.join(root, 'scripts/publish-android-release.mjs'), 'utf8');
