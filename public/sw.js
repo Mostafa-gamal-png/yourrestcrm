@@ -3,7 +3,7 @@
 // Only a generated public shell and its exact, integrity-checked assets enter
 // Cache Storage. Private HTML, API responses, attachments and map tiles never do.
 const CACHE_PREFIX = 'yourrest-crm-offline-';
-const BUILD_REVISION = '72f265e569996c3d5522f90d00b48cf43685d4141f1f06ece8c2e44e5005cfee';
+const BUILD_REVISION = '2641fc01b36cb8312c4197b5dcb7b622b6203149b541381ca183f19d3750db3c';
 const CACHE_NAME = `${CACHE_PREFIX}${BUILD_REVISION}`;
 const MANIFEST_URL = '/offline-shell-manifest.json';
 const SHELL_URL = '/offline-app.html';
