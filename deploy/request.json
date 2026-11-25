@@ -1,1 +1,1 @@
-{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-Android1016-20261125.zip","sha256":"2cd26dadeeff092fd09784a61cc929773e9203dd518b324696b495dba0a70f29","stage":"yourrest-crm-update-android-1016-20261125","helper":"yourrest-activate-update-android-1016.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-Phones-20261125.zip","sha256":"b78a8980c7abaef2bb582169375dfdecf01f4ff2f813a70971340cc61f7b3f7f","stage":"yourrest-crm-update-phones-20261125","helper":"yourrest-activate-update-phones.cjs"}
