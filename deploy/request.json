@@ -1,1 +1,1 @@
-{"mode":"diagnose","script":"scripts/diagnose/tracking-scope.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-Android1016-20261125.zip","sha256":"2cd26dadeeff092fd09784a61cc929773e9203dd518b324696b495dba0a70f29","stage":"yourrest-crm-update-android-1016-20261125","helper":"yourrest-activate-update-android-1016.cjs"}
