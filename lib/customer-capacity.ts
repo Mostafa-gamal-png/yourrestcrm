@@ -15,6 +15,11 @@ import {isFieldRole} from './roles';
 //   «حجم الطلب السنوي» (annualDemand), short texts up to 100 characters: entered, optional, kept in the customer's data (crm_records.data,
 //   JSON: no migration). A save that does not carry one (a page or a device queue of the release before) keeps the stored value
 //   (keepAbsentCapacity), and an empty one removes it.
+// Since 2026-11-26 (the owner, with two forms that differed: «عايز كله زى بعضه فى فورم واحد زى التانى والمندوب او المسوق يقدر يعدل بيانات
+// عملاءه»): «عدد الماكينات» and «أنواع الماكينات» are fields of every customer's form too, prefilled with what the card shows. What is typed
+// there (data.machineCount, data.machineTypes; the server marks it data.machinesEntered when a save changes them: markEnteredMachines) is
+// what the card shows, before the machines registered one by one and the sheet; emptied, the card goes back to them. They are saved
+// directly like the three below (DIRECT_FIELDS).
 // Who enters them: whoever may edit the customer today (lib/access.ts). A representative's or a marketing officer's change of these three
 // fields ONLY, on a customer assigned to them (the ownership of «إضافة ماكينة», app/crm-app.tsx canAddMachineTo), is saved directly
 // (capacityEditIsDirect, enforced by POST /api/crm): they are sales estimates updated often. Any other change, or another member's customer,
@@ -37,6 +42,13 @@ export const CAPACITY_TEXT:Record<CapacityItemKey,[string,string]>={
 };
 /** Beside a count or types taken from the imported sheet, when no machine is registered. */
 export const FROM_SHEET_TEXT:readonly [string,string]=['حسب الشيت','per the sheet'];
+/** Where a count typed in the customer's form comes from (the export's source column). */
+export const ENTERED_TEXT:readonly [string,string]=['مُدخل في بيانات العميل','Entered in the customer’s details'];
+/** What the form's two fields start from: the count and types the card shows now, as plain text (the types in Arabic, as stored). */
+export function shownMachines(capacity:CustomerCapacity):{count:number|null;types:string}{
+ const types=capacity.types;
+ return {count:capacity.machines?.count??null,types:!types?'':'entered' in types||types.fromSheet?types.text:machineTypesText(types.groups)};
+}
 export const MOLDS_MAX=10000;
 export const CAPACITY_TEXT_MAX=100;
 export const MOLDS_REFUSED='اكتب عدد القوالب المستخدمة رقمًا صحيحًا من 0 إلى 10000.';
@@ -94,15 +106,36 @@ export function keepAbsentCapacity(data:Record<string,unknown>,sent:Record<strin
  }
  return data;
 }
-/** A representative's or a marketing officer's save that changes these three fields only (fields: what lib/customer-edit-requests.ts
+/** The fields a representative or a marketing officer saves directly on their own customer: the three entered ones and, since 2026-11-26,
+ *  the machines' count and types typed in the form. */
+export const DIRECT_FIELDS=[...CAPACITY_FIELDS,'machineCount','machineTypes'] as const;
+const isDirectField=(field:string)=>(DIRECT_FIELDS as readonly string[]).includes(field);
+/** Set by the server (never by a page) when a save changes the typed count or types: from then they are what the card shows. */
+export const MACHINES_ENTERED='machinesEntered';
+const enteredCount=(value:unknown)=>{const n=typeof value==='string'&&value.trim()!==''?Number(value):value;return typeof n==='number'&&Number.isFinite(n)&&n>=0?Math.floor(n):null;};
+const enteredTypes=(value:unknown)=>typeof value==='string'?value.replace(/\s+/g,' ').trim():'';
+/** After the schema read the save: the count and types as saved, and the mark. Unchanged from the stored customer, the stored mark is
+ *  kept (a page never sends it); changed, the mark is the moment of the save; both emptied, the mark goes and the card counts the machines
+ *  registered and the sheet again. Returns whether they changed. */
+export function markEnteredMachines(data:Record<string,unknown>,stored:Record<string,unknown>|undefined,now:string):boolean{
+ delete data[MACHINES_ENTERED];
+ const count=enteredCount(data.machineCount),types=enteredTypes(data.machineTypes);
+ if(count===null)delete data.machineCount;else data.machineCount=count;
+ if(types)data.machineTypes=types;else delete data.machineTypes;
+ if(count===enteredCount(stored?.machineCount)&&types===enteredTypes(stored?.machineTypes)){if(stored?.[MACHINES_ENTERED])data[MACHINES_ENTERED]=stored[MACHINES_ENTERED];return false;}
+ if(count!==null||types)data[MACHINES_ENTERED]=now;
+ return true;
+}
+/** A representative's or a marketing officer's save that changes these fields only (fields: what lib/customer-edit-requests.ts
  *  customerEditProposal finds changed), on a customer assigned to them, is saved directly instead of waiting for approval. */
 export function capacityEditIsDirect(me:{id:string;role:string},customer:{assignedTo:string},fields:readonly string[]){
- return isFieldRole(me.role)&&!!me.id&&customer.assignedTo===me.id&&fields.length>0&&fields.every(isCapacityField);
+ return isFieldRole(me.role)&&!!me.id&&customer.assignedTo===me.id&&fields.length>0&&fields.every(isDirectField);
 }
-/** The customer as stored with the three fields of the save over it, and nothing else of the save: what a direct capacity save writes. */
+/** The customer as stored with the direct fields of the save (and the machines' mark) over it, and nothing else of the save: what a
+ *  direct save writes. */
 export function withCapacityOnly(stored:Record<string,unknown>,next:Record<string,unknown>):Record<string,unknown>{
  const data={...stored};
- for(const field of CAPACITY_FIELDS){if(next[field]===undefined)delete data[field];else data[field]=next[field];}
+ for(const field of [...DIRECT_FIELDS,MACHINES_ENTERED]){if(next[field]===undefined)delete data[field];else data[field]=next[field];}
  return data;
 }
 
@@ -135,8 +168,8 @@ export function machineTypesText(groups:readonly MachineTypeGroup[],tr:(text:str
 /** The five items of a customer, from its data and its machine records (only its own are read: kind factory, parent the customer).
  *  machines and types: null when there is nothing to say; fromSheet when they come from the imported sheet (no machine registered). */
 export type CustomerCapacity={
- machines:{count:number;fromSheet:boolean}|null;
- types:{fromSheet:false;groups:MachineTypeGroup[]}|{fromSheet:true;text:string}|null;
+ machines:{count:number;fromSheet:boolean;entered?:boolean}|null;
+ types:{fromSheet:false;groups:MachineTypeGroup[]}|{fromSheet:true;text:string}|{fromSheet:false;entered:true;text:string}|null;
  moldsInUse:number|null;productionCapacity:string;annualDemand:string;
  /** Whether a machine is registered one by one (else what is shown of the machines is the sheet's). */
  registered:boolean;
@@ -144,12 +177,13 @@ export type CustomerCapacity={
 export function customerCapacity(customerId:string,records:Iterable<MachineRow>,data:Record<string,unknown>|null|undefined):CustomerCapacity{
  const own=[...records].filter(record=>record.kind==='factory'&&record.parentId===customerId);
  const groups=machineTypeGroups(customerId,own),isRegistered=own.some(record=>registered(customerId,record));
- const counted=customerMachineCount(customerId,own,data?.machineCount);
+ const counted=customerMachineCount(customerId,own,data?.machineCount,data?.[MACHINES_ENTERED]);
+ const typedTypes=data?.[MACHINES_ENTERED]?enteredTypes(data.machineTypes):'';
  // The sheet's count is shown only when the sheet holds one: a group imported without a number counts nothing, which is not «0».
  const sheetKnown=whole(data?.machineCount)!==null||own.some(record=>record.data?.recordType==='group'&&whole(record.data?.quantity)!==null);
- const machines=counted.source==='machines'?{count:counted.count,fromSheet:false}:counted.source==='sheet'&&sheetKnown?{count:counted.count,fromSheet:true}:null;
+ const machines=counted.source==='entered'?{count:counted.count,fromSheet:false,entered:true}:counted.source==='machines'?{count:counted.count,fromSheet:false}:counted.source==='sheet'&&sheetKnown?{count:counted.count,fromSheet:true}:null;
  const sheetTypes=String(data?.machineTypes||'').trim()||[...new Set(own.filter(record=>record.data?.recordType==='group').map(record=>String(record.data?.sourceMachineTypes||'').trim()).filter(Boolean))].join('، ');
- const types:CustomerCapacity['types']=isRegistered?(groups.length?{fromSheet:false,groups}:null):sheetTypes?{fromSheet:true,text:sheetTypes}:null;
+ const types:CustomerCapacity['types']=typedTypes?{fromSheet:false,entered:true,text:typedTypes}:isRegistered?(groups.length?{fromSheet:false,groups}:null):sheetTypes?{fromSheet:true,text:sheetTypes}:null;
  const molds=capacityValue(data,'moldsInUse');
  return {machines,types,moldsInUse:typeof molds==='number'?molds:null,productionCapacity:String(capacityValue(data,'productionCapacity')),annualDemand:String(capacityValue(data,'annualDemand')),registered:isRegistered};
 }
@@ -171,8 +205,8 @@ export function capacityExportColumns<T>(capacityOf:(row:T)=>CustomerCapacity,sa
  const sheet=say(...FROM_SHEET_TEXT);
  return [
   [say(...CAPACITY_TEXT.machineCount),row=>capacityOf(row).machines?.count??'','number'],
-  [say('مصدر عدد الماكينات','Machine count source'),row=>{const machines=capacityOf(row).machines;return !machines?'':machines.fromSheet?sheet:say('الماكينات المسجلة','Registered machines');}],
-  [say(...CAPACITY_TEXT.machineTypes),row=>{const types=capacityOf(row).types;return !types?'':types.fromSheet?types.text+' ('+sheet+')':machineTypesText(types.groups,tr);}],
+  [say('مصدر عدد الماكينات','Machine count source'),row=>{const machines=capacityOf(row).machines;return !machines?'':machines.entered?say(...ENTERED_TEXT):machines.fromSheet?sheet:say('الماكينات المسجلة','Registered machines');}],
+  [say(...CAPACITY_TEXT.machineTypes),row=>{const types=capacityOf(row).types;return !types?'':'entered' in types?types.text:types.fromSheet?types.text+' ('+sheet+')':machineTypesText(types.groups,tr);}],
   [say(...CAPACITY_TEXT.moldsInUse),row=>capacityOf(row).moldsInUse??'','number'],
   [say(...CAPACITY_TEXT.productionCapacity),row=>capacityOf(row).productionCapacity],
   [say(...CAPACITY_TEXT.annualDemand),row=>capacityOf(row).annualDemand],

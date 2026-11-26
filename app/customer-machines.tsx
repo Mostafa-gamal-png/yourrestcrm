@@ -106,7 +106,7 @@ function CustomerMobileCard({customer,linked,visitCount,canEdit,canAddMachine=ca
         <span><MapPin size={14} aria-hidden="true"/>{place||say('المنطقة غير محددة','Region not specified')}</span>
         {showLastPurchase&&<LastPurchase customer={customer} className="customer-mobile-last-purchase"/>}
       </div>
-      <CustomerClassificationBadges data={d} machines={customerMachineCount(customer.id,linked,d.machineCount)}/>
+      <CustomerClassificationBadges data={d} machines={customerMachineCount(customer.id,linked,d.machineCount,d.machinesEntered)}/>
       <CustomerCapacity customerId={customer.id} data={d} machines={linked} variant="card"/>
       {contact&&<p className="customer-mobile-contact">{contact}{phone&&<bdi>{phone}</bdi>}</p>}
       <div className={'customer-mobile-primary'+(phone?' customer-mobile-with-phone':'')}>

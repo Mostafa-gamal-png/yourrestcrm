@@ -67,7 +67,7 @@ const event=()=>({preventDefault:noop,nativeEvent:{submitter:null}});
 for(const locale of ['ar','en'])for(const role of ['rep','supervisor','manager','admin']){
  language=locale;
  const actor={...me,role},editable={...customer,data:{...customer.data,_masterReadOnly:false}},requests=[],pending=[];
- // The phone is in the contacts' editor since the customer form of 2026-11-21: the sheet's machine count, a plain field of the form, is edited here.
+ // The phone is in the contacts' editor since the customer form of 2026-11-21: the machine count is edited here.
  const opened={kind:'customer',row:editable,data:{...editable.data,phone:'0550000000',machineCount:5},parentId:''};
  const h=harness('app/crm-app.tsx',{view:'customer',records:[editable],members:[actor],me:actor,loading:false,form:opened},{},{navigator:{onLine:true},fetch:async(url,config)=>{
   if(config.method==='POST'){requests.push(JSON.parse(config.body));return new Promise(resolve=>pending.push(resolve));}
@@ -80,7 +80,9 @@ for(const locale of ['ar','en'])for(const role of ['rep','supervisor','manager',
  const originalDraft=h.state.form;
  button(form,locale==='en'?dictionary['إلغاء']:'إلغاء').props.onClick();
  const retainedWhileSaving=h.state.form===originalDraft;
- nodes(form,node=>node.type==='input'&&node.props.type==='number'&&String(node.props.value)==='5')[0].props.onChange({target:{value:'9'}});
+ // Since 2026-11-26 the count is a field of «الطاقة والاحتياج» (app/customer-capacity.tsx CustomerCapacityFields): its change callback, held
+ // from the pending render, is the stale one tried here.
+ nodes(form,node=>!!node.props&&typeof node.props.onChange==='function'&&'stored' in node.props&&String(node.props.contextKey||'').startsWith('customer:'))[0].props.onChange('machineCount',9);
  tree=h.render();form=nodes(tree,node=>node.type==='form')[0];
  const saveButton=nodes(form,node=>node.type==='button'&&node.props.type==='submit')[0];
  // Settle the request before asserting so a failing regression cannot leave timers alive.

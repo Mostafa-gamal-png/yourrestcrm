@@ -21,7 +21,7 @@ import {deleteCapture,rootCustomer} from '@/lib/trash-server';
 import {customerCodeKey,erpCodeTaken,ERP_CODE_LOCKED} from '@/lib/customer-identity';
 import {proposeCustomerEdit,decideCustomerEdit,customerEditHistoryEntry,type CustomerEditApproval} from '@/lib/customer-edit-requests-server';
 import {proposesCustomerEdit,marketingCorrectionWaits,customerEditProposal,DIRECT_EDIT,CAPACITY_EDIT,type CustomerEditDirect} from '@/lib/customer-edit-requests';
-import {capacityEditIsDirect,keepAbsentCapacity,withCapacityOnly} from '@/lib/customer-capacity';
+import {capacityEditIsDirect,keepAbsentCapacity,markEnteredMachines,withCapacityOnly} from '@/lib/customer-capacity';
 import {CUSTOMER_DECORATIONS} from '@/lib/crm-context-records';
 import {keepAbsentContacts} from '@/lib/customer-contacts';
 import {carryRetiredClassification,changedClassification,keepAbsentClassification,CLASSIFICATION_REFUSED} from '@/lib/customer-classification';
@@ -253,6 +253,9 @@ async function saveRecord(c:Awaited<ReturnType<typeof context>>,body:Record<stri
   // «المسؤولون» (lib/customer-contacts.ts, 2026-11-21): the roles and the contacts beyond the second, kept when a save does not carry them;
   // a second left empty with others after it takes the first of them.
   keepAbsentContacts(data,inputData,old?.data);
+  // «عدد الماكينات» and «أنواع الماكينات» typed in the form (2026-11-26): a save that changes them marks them as what the card shows; one that
+  // does not keeps the stored mark (lib/customer-capacity.ts markEnteredMachines). A page never sets the mark itself.
+  markEnteredMachines(data,old?.data,now);
   if(changedClassification(old?.data,data).length&&!canClassifyCustomer({kind:'customer',assignedTo:data.assignedTo,branch:data.branch},c.members,c.me))throw new CRMError(CLASSIFICATION_REFUSED,403);
  }
  if(kind==='factory'){

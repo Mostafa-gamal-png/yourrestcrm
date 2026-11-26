@@ -122,6 +122,35 @@ eq(C.capacityItems(C.customerCapacity('c8',[],{moldsInUse:0})),['moldsInUse'],'0
 eq(C.capacityItems(C.customerCapacity('c1',records,{annualDemand:'x'}),{only:['machineCount','machineTypes']}),['machineCount','machineTypes'],'only some items (the form shows the computed two)');
 eq(C.customerCapacity('c9',[m('k','c9',{recordType:'machine',machineType:'stationary',quantity:0})],{machineCount:4}).machines,{count:0,fromSheet:false},'a registered machine of «العدد» 0: the registered count, never the sheet\'s (the rule of lib/customer-classification.ts)');
 
+// ---- Typed in the form (2026-11-26, the owner: «عايز كله زى بعضه فى فورم واحد»): the count and types marked machinesEntered are what the card
+// shows, before the machines registered one by one, the sheet's groups and the sheet's own number.
+const typed='2026-11-26T08:00:00.000Z';
+capacity=C.customerCapacity('c1',records,{machineCount:5,machineTypes:'زينت ×3 · Besser ×2',machinesEntered:typed});
+eq([capacity.machines,capacity.types,capacity.registered],[{count:5,fromSheet:false,entered:true},{fromSheet:false,entered:true,text:'زينت ×3 · Besser ×2'},true],'typed: over the 9 registered machines and their groups');
+capacity=C.customerCapacity('c3',[m('s','c3',{recordType:'group',quantity:2,sourceMachineTypes:'زينت'})],{machineCount:3,machineTypes:'زينت',machinesEntered:typed});
+eq([capacity.machines,capacity.types],[{count:3,fromSheet:false,entered:true},{fromSheet:false,entered:true,text:'زينت'}],'typed over the imported group (the factory the owner showed: 2 in the sheet, 3 typed)');
+capacity=C.customerCapacity('c3',[m('s','c3',{recordType:'group',quantity:2,sourceMachineTypes:'زينت'})],{machineCount:3,machineTypes:'زينت'});
+eq(capacity.machines,{count:2,fromSheet:true},'without the mark the old rule holds: the imported group (a customer nobody typed for is shown as before)');
+capacity=C.customerCapacity('c1',records,{machineCount:4,machinesEntered:typed});
+eq([capacity.machines,capacity.types.fromSheet,'entered' in capacity.types],[{count:4,fromSheet:false,entered:true},false,false],'a typed count with its types left empty: the types of the machines registered');
+capacity=C.customerCapacity('c1',records,{machineTypes:'Besser',machinesEntered:typed});
+eq([capacity.machines,capacity.types],[{count:9,fromSheet:false},{fromSheet:false,entered:true,text:'Besser'}],'typed types with the count left empty: the registered count');
+eq(C.shownMachines(C.customerCapacity('c1',records,{})),{count:9,types:'QGM ×4 · ثابتة ×2 · متحركة ×1 · Columbia ×1 · غير محدد ×1'},'the form starts from the card: the registered machines, the types in Arabic');
+eq(C.shownMachines(C.customerCapacity('c3',[m('s','c3',{recordType:'group',quantity:2,sourceMachineTypes:'زينت'})],{machineCount:2,machineTypes:'زينت'})),{count:2,types:'زينت'},'the sheet\'s');
+eq(C.shownMachines(C.customerCapacity('c7',[],{})),{count:null,types:''},'nothing: empty fields');
+// The mark is the server's: set when a save changes them, kept when it does not, gone when both are emptied; never from the page.
+const mark=(data,stored)=>{const copy={...data};const changed=C.markEnteredMachines(copy,stored,typed);return [changed,copy];};
+eq(mark({name:'x',machineCount:2,machineTypes:'زينت'},{machineCount:2,machineTypes:'زينت'}),[false,{name:'x',machineCount:2,machineTypes:'زينت'}],'unchanged: no mark (a customer saved for another reason keeps the old rule)');
+eq(mark({machineCount:2,machineTypes:'زينت',machinesEntered:'forged'},{machineCount:2,machineTypes:'زينت'}),[false,{machineCount:2,machineTypes:'زينت'}],'a mark a page sends is dropped');
+eq(mark({machineCount:2,machineTypes:'زينت'},{machineCount:2,machineTypes:'زينت',machinesEntered:'2026-11-20T00:00:00.000Z'}),[false,{machineCount:2,machineTypes:'زينت',machinesEntered:'2026-11-20T00:00:00.000Z'}],'unchanged: the stored mark kept');
+eq(mark({machineCount:3,machineTypes:'زينت'},{machineCount:2,machineTypes:'زينت'}),[true,{machineCount:3,machineTypes:'زينت',machinesEntered:typed}],'the count changed: marked now');
+eq(mark({machineCount:'3',machineTypes:'  زينت  و  Besser '},{machineCount:3,machineTypes:'زينت و Besser'}),[false,{machineCount:3,machineTypes:'زينت و Besser'}],'the same written differently (a number as text, spaces) is no change');
+eq(mark({machineCount:2,machineTypes:'Besser'},{machineCount:2,machineTypes:'زينت'}),[true,{machineCount:2,machineTypes:'Besser',machinesEntered:typed}],'the types changed: marked');
+eq(mark({machineCount:null,machineTypes:''},{machineCount:2,machineTypes:'زينت',machinesEntered:'2026-11-20T00:00:00.000Z'}),[true,{}],'both emptied: no count, no types, no mark (the card counts the machines again)');
+eq(mark({machineCount:4},{}),[true,{machineCount:4,machinesEntered:typed}],'a new customer given a count: marked');
+eq(mark({},{}),[false,{}],'a new customer given none: nothing');
+eq(mark({machineCount:0},{machineCount:2}),[true,{machineCount:0,machinesEntered:typed}],'0 typed is a count');
+
 // ---- Who saves directly: a representative or a marketing officer, these three alone, their own customer.
 const rep={id:'rep1',role:'rep'},mkt={id:'mkt',role:'marketing'};
 const own={assignedTo:'rep1'},other={assignedTo:'rep2'};
@@ -139,6 +168,15 @@ eq([
  C.capacityEditIsDirect({id:'cs',role:'customer_service'},{assignedTo:'cs'},['moldsInUse']),
  C.capacityEditIsDirect({id:'',role:'rep'},{assignedTo:''},['moldsInUse']),
 ],[true,true,false,false,false,false,true,false,false,false,false,false],'direct: the field roles, the three alone, their own customer; everything else waits as before');
+eq([
+ C.capacityEditIsDirect(rep,own,['machineCount']),
+ C.capacityEditIsDirect(rep,own,['machineCount','machineTypes','moldsInUse']),
+ C.capacityEditIsDirect(mkt,{assignedTo:'mkt'},['machineTypes']),
+ C.capacityEditIsDirect(rep,other,['machineCount']),
+ C.capacityEditIsDirect(rep,own,['machineCount','name']),
+ C.capacityEditIsDirect({id:'sup',role:'supervisor'},{assignedTo:'sup'},['machineCount']),
+],[true,true,true,false,false,false],'since 2026-11-26 the machines\' count and types too: direct for the field roles on their own customer, never with another field');
+eq(C.withCapacityOnly({name:'x',machineCount:2,machineTypes:'زينت'},{name:'changed',machineCount:3,machineTypes:'زينت',machinesEntered:typed}),{name:'x',machineCount:3,machineTypes:'زينت',machinesEntered:typed},'a direct save writes the machines and their mark too, nothing else');
 eq(C.withCapacityOnly({name:'x',phone:'1',moldsInUse:3,annualDemand:'old'},{name:'changed',phone:'2',moldsInUse:4,productionCapacity:'new'}),{name:'x',phone:'1',moldsInUse:4,productionCapacity:'new'},
  'what a direct save writes: the stored customer with the three of the save over it (one the save left out removed), nothing else of the save');
 
@@ -191,6 +229,9 @@ const cell=(language,id)=>C.capacityExportColumns(row=>capacities.get(row.id),(a
 eq(cell('ar','c1'),[['عدد الماكينات',9,'number'],['مصدر عدد الماكينات','الماكينات المسجلة',undefined],['أنواع الماكينات','QGM ×4 · ثابتة ×2 · متحركة ×1 · Columbia ×1 · غير محدد ×1',undefined],['عدد القوالب المستخدمة',30,'number'],['الطاقة الإنتاجية','5000 بلكة',undefined],['حجم الطلب السنوي','',undefined]],'the six columns of a customer with registered machines');
 eq(cell('en','c3').map(([header,value])=>[header,value]),[['Machines',5],['Machine count source','per the sheet'],['Machine types','Besser (per the sheet)'],['Molds in use',''],['Production capacity',''],['Annual demand','']],'in English, the sheet\'s');
 eq(cell('ar','c7').map(([,value])=>value),['','','','','',''],'nothing: empty cells');
+capacities.set('c10',C.customerCapacity('c10',records,{machineCount:5,machineTypes:'زينت',machinesEntered:typed}));
+eq(cell('ar','c10').slice(0,3).map(([,value])=>value),[5,'مُدخل في بيانات العميل','زينت'],'typed: the count, where it comes from, the types as typed');
+eq(cell('en','c10')[1][1],'Entered in the customer’s details','in English');
 const app=fs.readFileSync(path.join(root,'app/crm-app.tsx'),'utf8');
 ok(app.includes("...capacityExportColumns<Row>(capacityOf, say, t)")&&app.includes("['موعد احتياج القوالب المتوقع', r => moldNeedDay(r.data), 'day']"),'the customers\' export has the six, the visits\' the day (a date cell)');
 
@@ -208,6 +249,8 @@ const full=html('CustomerCapacity',{customerId:'c1',data:{moldsInUse:30,producti
 eq((full.match(/data-capacity-item="/g)||[]).length,5,'the card: five items');
 ok(words(full).includes('عدد الماكينات 9')&&words(full).includes('أنواع الماكينات QGM ×4 · ثابتة ×2 · متحركة ×1 · Columbia ×1 · غير محدد ×1')&&words(full).includes('عدد القوالب المستخدمة 30')&&words(full).includes('الطاقة الإنتاجية 5000 بلكة يوميًا')&&words(full).includes('حجم الطلب السنوي 40 قالبًا'),'their words: '+words(full));
 ok(full.includes('<bdi>QGM</bdi>'),'a manufacturer isolated in its own direction');
+const typedCard=html('CustomerCapacity',{customerId:'c1',data:{machineCount:3,machineTypes:'زينت',machinesEntered:'2026-11-26T08:00:00.000Z'},machines:records});
+ok(words(typedCard).includes('عدد الماكينات 3')&&words(typedCard).includes('أنواع الماكينات زينت')&&!words(typedCard).includes('حسب الشيت'),'the card: what was typed, plainly: '+words(typedCard));
 const sheetOnly=html('CustomerCapacity',{customerId:'c3',data:{machineCount:5,machineTypes:'Besser'},machines:[]});
 ok(words(sheetOnly).includes('عدد الماكينات 5 · حسب الشيت')&&words(sheetOnly).includes('أنواع الماكينات Besser · حسب الشيت'),'the sheet\'s, marked: '+words(sheetOnly));
 eq(html('CustomerCapacity',{customerId:'c3',data:{machineCount:5,machineTypes:'Besser'},machines:[],variant:'row',sheetBeside:true}),'','the desktop row beside the sheet\'s own column: nothing to add');
@@ -215,7 +258,7 @@ eq(html('CustomerCapacity',{customerId:'c7',data:{},machines:[]}),'','nothing: n
 const sheet=html('CustomerCapacity',{customerId:'c1',data:{annualDemand:'x'},machines:records,variant:'sheet'});
 ok(sheet.includes('<h3>الطاقة الإنتاجية والاحتياج</h3>')&&sheet.includes('data-capacity-summary'),'the sheet: its heading');
 const form=html('CustomerCapacityFields',{customerId:'c1',data:{moldsInUse:30,productionCapacity:'',annualDemand:'سنوي'},machines:records,contextKey:'k',directNote:true,onChange:()=>{}});
-eq([(form.match(/<input/g)||[]).length,form.includes('data-capacity-direct-note'),form.includes('value="30"'),form.includes('value="سنوي"'),form.includes('inputMode="numeric"')||form.includes('inputmode="numeric"'),(form.match(/maxLength="100"|maxlength="100"/g)||[]).length,words(form).includes('عدد الماكينات 9')],[3,true,true,true,true,2,true],'the form: three fields (a number keyboard; 100 characters for the two texts), the computed machines read only, and the note of the direct save');
+eq([(form.match(/<input/g)||[]).length,form.includes('data-capacity-direct-note'),form.includes('value="30"'),form.includes('value="سنوي"'),form.includes('inputMode="numeric"')||form.includes('inputmode="numeric"'),(form.match(/maxLength="100"|maxlength="100"/g)||[]).length,form.includes('data-capacity-field="machineCount"')&&form.includes('value="9"')],[5,true,true,true,true,3,true],'the form: five fields (two number keyboards; 100 characters for the three texts), the machines\' count starting from what the card shows (9), and the note of the direct save');
 eq(html('CustomerCapacityFields',{data:{},machines:[],contextKey:'k',onChange:()=>{}}).includes('data-capacity-direct-note'),false,'no note where the save waits or is direct anyway');
 ok((form.match(/voice-button|has-voice-input|keyboard-input/g)||[]).length>=2,'the two texts with dictation, as the other free-text fields');
 

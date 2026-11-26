@@ -12,6 +12,7 @@ type Say=(ar:string,en:string)=>string;
 /** «ماكينتان مسجلتان», «3 ماكينات في الشيت» …: the number with where it comes from (the machines registered one by one, or the sheet). */
 function machineText(machines:MachineCount,say:Say){
  const n=machines.count,registered=machines.source==='machines';
+ if(machines.source==='entered')return say('عدد الماكينات المُدخل: '+n,'Entered machine count: '+n);
  if(n===1)return registered?say('ماكينة واحدة مسجلة','1 registered machine'):say('ماكينة واحدة في الشيت','1 machine in the sheet');
  if(n===2)return registered?say('ماكينتان مسجلتان','2 registered machines'):say('ماكينتان في الشيت','2 machines in the sheet');
  const noun=n>=3&&n<=10?'ماكينات':'ماكينة';

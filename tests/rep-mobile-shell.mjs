@@ -107,7 +107,10 @@ for(const locale of ['ar','en']){
  // The ERP code is read-only for everyone (2026-11-12): never an input; a new customer has none yet.
  eq(labels.some(node=>text(node).startsWith(locale==='ar'?'كود العميل في ERP':'Customer ERP code')),false,'No ERP code input in the customer form');
  eq(nodes(form,node=>typeof node.type==='function'&&node.type.name==='ErpCodeReadOnly').length,0,'A new customer shows no ERP code');
- for(const [label,step] of [['المدينة',3],['العنوان',3],['مورد القوالب والقطع',5],['عدد الماكينات في الشيت',5],['أنواع الماكينات في الشيت',5],['ملاحظات المصنع',6]]){const found=labels.find(node=>text(node).startsWith(tr(label)));ok(found&&inSection(step).has(found),label+' is in section '+step);}
+ for(const [label,step] of [['المدينة',3],['العنوان',3],['مورد القوالب والقطع',5],['ملاحظات المصنع',6]]){const found=labels.find(node=>text(node).startsWith(tr(label)));ok(found&&inSection(step).has(found),label+' is in section '+step);}
+ // Since 2026-11-26 the machines' count and types are fields of «الطاقة والاحتياج» (app/customer-capacity.tsx CustomerCapacityFields).
+ const capacityEditor=nodes(form,node=>!!node.props&&'stored' in node.props&&typeof node.props.onChange==='function'&&String(node.props.contextKey||'').startsWith('customer:'))[0];
+ ok(capacityEditor&&inSection(5).has(capacityEditor),'The machines\' count and types (CustomerCapacityFields) are in section 5');
  const location=nodes(form,node=>typeof node.props?.onPendingChange==='function')[0];eq([location.props.compact,inSection(3).has(location)],[true,true],'The location is one line in «الموقع»');
  const capacity=nodes(form,node=>node.props&&'directNote' in node.props);eq([capacity.length,capacity.every(node=>inSection(5).has(node))],[1,true],'The capacity in «الطاقة والاحتياج»');
  eq(labels.some(node=>text(node).includes(tr('المندوب المسؤول'))),false,'Rep form exposes no assignment override');

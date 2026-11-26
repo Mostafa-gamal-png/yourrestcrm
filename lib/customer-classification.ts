@@ -126,7 +126,7 @@ type MachineRow={kind:string;parentId:string|null;data:Record<string,unknown>|nu
  *  among them. So the count never adds the two (review of 2026-11-18): the machines registered one by one when there is any (each its
  *  «العدد», a machine with no number counting one), else the sheet's groups (their «العدد», a group of unknown size counting nothing),
  *  else the customer's own sheet count, else none. */
-export type MachineCount={count:number;source:'machines'|'sheet'|'none'};
+export type MachineCount={count:number;source:'machines'|'sheet'|'none'|'entered'};
 type Tally={machines:number;hasMachine:boolean;groups:number;hasGroup:boolean};
 const whole=(value:unknown)=>typeof value==='number'&&Number.isFinite(value)&&value>=0?Math.floor(value):null;
 function add(tally:Tally,record:MachineRow){
@@ -134,7 +134,11 @@ function add(tally:Tally,record:MachineRow){
  if(record.data?.recordType==='group'){tally.hasGroup=true;tally.groups+=quantity??0;}
  else{tally.hasMachine=true;tally.machines+=quantity??1;}
 }
-function counted(tally:Tally|undefined,sheetCount:unknown):MachineCount{
+/** Since 2026-11-26 (the owner: «عايز كله زى بعضه فى فورم واحد»): a count typed in the customer's form (data.machinesEntered, set by the
+ *  server when a save changes it: lib/customer-capacity.ts markEnteredMachines) is the count, before the machines registered one by one,
+ *  the sheet's groups and the sheet's own number. */
+function counted(tally:Tally|undefined,sheetCount:unknown,entered?:unknown):MachineCount{
+ if(entered&&whole(sheetCount)!==null)return {count:whole(sheetCount)!,source:'entered'};
  if(tally?.hasMachine)return {count:tally.machines,source:'machines'};
  if(tally?.hasGroup)return {count:tally.groups,source:'sheet'};
  const sheet=whole(sheetCount);
@@ -142,25 +146,25 @@ function counted(tally:Tally|undefined,sheetCount:unknown):MachineCount{
 }
 const emptyTally=():Tally=>({machines:0,hasMachine:false,groups:0,hasGroup:false});
 /** One customer's: its machine records (kind factory, parent the customer) and its own sheet count. */
-export function customerMachineCount(customerId:string,records:Iterable<MachineRow>,sheetCount?:unknown):MachineCount{
+export function customerMachineCount(customerId:string,records:Iterable<MachineRow>,sheetCount?:unknown,entered?:unknown):MachineCount{
  const tally=emptyTally();let any=false;
  for(const record of records)if(record.kind==='factory'&&record.parentId===customerId){add(tally,record);any=true;}
- return counted(any?tally:undefined,sheetCount);
+ return counted(any?tally:undefined,sheetCount,entered);
 }
 /** Every customer's in one pass (the customers page filters thousands of customers); the sheet count read from the customer records. */
 export function customerMachineCounts(records:Iterable<MachineRow&{id?:string}>):Map<string,MachineCount>{
- const tallies=new Map<string,Tally>(),sheets=new Map<string,unknown>();
+ const tallies=new Map<string,Tally>(),sheets=new Map<string,unknown>(),entered=new Map<string,unknown>();
  for(const record of records){
-  if(record.kind==='customer'&&record.id)sheets.set(record.id,record.data?.machineCount);
+  if(record.kind==='customer'&&record.id){sheets.set(record.id,record.data?.machineCount);entered.set(record.id,record.data?.machinesEntered);}
   else if(record.kind==='factory'&&record.parentId){let tally=tallies.get(record.parentId);if(!tally)tallies.set(record.parentId,tally=emptyTally());add(tally,record);}
  }
  const counts=new Map<string,MachineCount>();
- for(const id of new Set([...sheets.keys(),...tallies.keys()]))counts.set(id,counted(tallies.get(id),sheets.get(id)));
+ for(const id of new Set([...sheets.keys(),...tallies.keys()]))counts.set(id,counted(tallies.get(id),sheets.get(id),entered.get(id)));
  return counts;
 }
 export const NO_MACHINES:MachineCount={count:0,source:'none'};
 /** The number only (as the size suggestion reads it). */
-export const registeredMachineCount=(customerId:string,records:Iterable<MachineRow>,sheetCount?:unknown)=>customerMachineCount(customerId,records,sheetCount).count;
+export const registeredMachineCount=(customerId:string,records:Iterable<MachineRow>,sheetCount?:unknown,entered?:unknown)=>customerMachineCount(customerId,records,sheetCount,entered).count;
 /** The size the machines give: 5 or more A «كبير», 3 to 4 B «متوسط», 1 to 2 C «صغير», none nothing («غير محدد»). */
 export function sizeFromMachines(machines:number):Exclude<FactorySize,'D'>|''{
  if(!Number.isFinite(machines)||machines<1)return '';

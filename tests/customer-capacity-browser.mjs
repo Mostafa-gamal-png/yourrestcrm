@@ -135,6 +135,31 @@ try {
   check((await app.db.prepare("SELECT COUNT(*) AS n FROM crm_audit WHERE record_id='c1' AND action='customer-edit:request'").first()).n, 0, 'no request was made');
   await page.context().close();
 
+  // ---- 2b. The owner's case (2026-11-26): the sheet's 5 of a factory, changed in the form like any field, by the representative of that
+  // customer, saved directly; the card shows what was typed, without «حسب الشيت».
+  page = await open('rep');
+  await page.getByRole('button', {name: 'بيانات العميل: ' + SHEET, exact: true}).click();
+  await page.locator('.crm-sheet').waitFor();await still(page);
+  await page.locator('.crm-sheet').getByRole('button', {name: 'تعديل', exact: true}).click();
+  dialog = page.locator('.crm-master-dialog');await dialog.locator('form').waitFor();await still(page);
+  const machinesSection = dialog.locator('[data-customer-section="5"]');await machinesSection.scrollIntoViewIfNeeded();
+  check([await machinesSection.locator('[data-capacity-field=machineCount]').inputValue(), await machinesSection.getByRole('textbox', {name: /^أنواع الماكينات/}).inputValue()], ['5', 'Besser'], 'the form starts from what the card shows');
+  check(await dialog.locator('button[type=submit]').innerText().then(text => text.trim()), 'إرسال التعديل للموافقة', 'nothing changed yet');
+  await machinesSection.locator('[data-capacity-field=machineCount]').fill('٧');
+  check(await dialog.locator('button[type=submit]').innerText().then(text => text.trim()), 'حفظ العميل', 'the count changed alone: «حفظ العميل» (saved directly)');
+  await shot(page, 'capacity-machines-form-360-ar');
+  const machinesPosted = page.waitForResponse(response => new URL(response.url()).pathname === '/api/crm' && response.request().method() === 'POST');
+  await dialog.locator('button[type=submit]').click();
+  check((await (await machinesPosted).json()).pendingApproval, undefined, 'saved directly');
+  await dialog.waitFor({state: 'detached'});
+  const typedNow = await stored('c2');
+  check([typedNow.machineCount, typedNow.machineTypes, typeof typedNow.machinesEntered], [7, 'Besser', 'string'], '«٧» read as 7, the types kept as shown, marked by the server');
+  await page.reload();await page.getByRole('button', {name: 'بيانات العميل: ' + SHEET, exact: true}).click();
+  const typedSheet = page.locator('.crm-sheet [data-capacity-summary]');await typedSheet.waitFor();
+  const typedWords = await typedSheet.innerText().then(text => text.replace(/\s+/g, ' '));
+  ok(typedWords.includes('عدد الماكينات 7') && !typedWords.includes('حسب الشيت'), 'the card: 7, without «حسب الشيت»: ' + typedWords);
+  await page.context().close();
+
   // ---- 3. The visit: «موعد احتياج القوالب المتوقع».
   page = await open('rep', {view: 'activity'});
   await page.locator('.heading-actions').getByRole('button', {name: 'زيارة جديدة', exact: true}).click();

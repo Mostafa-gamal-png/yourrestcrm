@@ -4,6 +4,14 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## The machines' count and types, a field of every customer's form (2026-11-26, no migration)
+
+- **Asked.** The owner, with two forms that differed: «عايز كله زى بعضه فى فورم واحد زى التانى والمندوب او المسوق يقدر يعدل بيانات عملاءه». Guide 9-أر.
+- **What changed.** «عدد الماكينات» and «أنواع الماكينات» are fields of the capacity section for every customer, starting from what the card
+  shows; untouched, nothing changes. A save that changes them is marked by the server (`machinesEntered`, `markEnteredMachines`) and from
+  then they are the card's count and types (and the size, and the export), before the registered machines and the sheet; emptied, the old
+  rule again. The representative or marketing officer of the customer saves them directly, like the three capacity fields.
+
 ## Account edits against a stand-in phone; tracking resumes after signing in again (2026-11-25, no migration)
 
 - **Asked.** Item 1 of the three the owner approved on 2026-11-25 («اعمل التلاتة»). Guide 9-أق.

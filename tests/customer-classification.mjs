@@ -124,6 +124,15 @@ eq(C.customerMachineCount('c6',records),{count:0,source:'none'},'none at all');
 eq([C.customerMachineCount('c7',records,0),C.customerMachineCount('c8',records,'4'),C.customerMachineCount('c8',records,-1)],[{count:0,source:'sheet'},{count:0,source:'none'},{count:0,source:'none'}],'a sheet count of 0 is a count; text or a negative is none');
 eq(Object.fromEntries(C.customerMachineCounts(records)),{c1:{count:3,source:'machines'},c2:{count:7,source:'machines'},c3:{count:4,source:'sheet'},c4:{count:5,source:'sheet'},c5:{count:2,source:'machines'},c6:{count:0,source:'none'},c7:{count:0,source:'sheet'},c8:{count:0,source:'none'}},'every customer\'s in one pass, the same counts, the sheet count read from the customer');
 eq([...C.customerMachineCounts([factory('x','gone',{recordType:'machine',quantity:2})])],[['gone',{count:2,source:'machines'}]],'machines of a customer the list does not hold are still counted');
+// 2026-11-26: a count typed in the customer's form (marked machinesEntered by the server) is the count, before the machines registered,
+// the sheet's groups and the sheet's own number; without the mark, or with no number, the rule above.
+const typedMachines=[factory('t1','c20',{recordType:'machine',quantity:4}),factory('g1','c21',{recordType:'group',quantity:2})];
+eq(C.customerMachineCount('c20',typedMachines,7,'2026-11-26T08:00:00.000Z'),{count:7,source:'entered'},'typed over 4 registered');
+eq(C.customerMachineCount('c21',typedMachines,3,'2026-11-26T08:00:00.000Z'),{count:3,source:'entered'},'typed over the imported group of 2');
+eq(C.customerMachineCount('c21',typedMachines,3),{count:2,source:'sheet'},'no mark: the imported group, as before');
+eq(C.customerMachineCount('c20',typedMachines,undefined,'2026-11-26T08:00:00.000Z'),{count:4,source:'machines'},'marked with no number (types only): the registered');
+eq(Object.fromEntries(C.customerMachineCounts([{id:'c20',kind:'customer',parentId:null,data:{machineCount:7,machinesEntered:'2026-11-26T08:00:00.000Z'}},{id:'c21',kind:'customer',parentId:null,data:{machineCount:3}},...typedMachines])),{c20:{count:7,source:'entered'},c21:{count:2,source:'sheet'}},'the whole list reads the mark too');
+eq(C.computedFactorySize({},{count:7,source:'entered'}).value,'A','the size follows the typed count (7: كبير)');
 eq(C.registeredMachineCount('c5',records,3),2,'the number alone, as the size reads it');
 eq([C.sizeFromMachines(C.registeredMachineCount('c4',records,5)),C.sizeFromMachines(C.registeredMachineCount('c5',records,3))],['A','C'],'the sheet\'s five give «كبير»; the two registered «صغير» (the double count would have said «كبير»)');
 eq(C.NO_MACHINES,{count:0,source:'none'},'the count of a customer with no entry');

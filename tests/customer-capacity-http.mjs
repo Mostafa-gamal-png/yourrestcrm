@@ -158,6 +158,28 @@ try {
   after = await stored('cold');
   eq([after.data.phone, capacity(after.data)], ['0533333333', {moldsInUse: 8, productionCapacity: 'قديمة', annualDemand: 'سنوي قديم'}], 'approved: the phone applied, the three kept');
 
+  // ---- The machines' count and types typed in the form (2026-11-26): direct for the representative's own customer, the mark the server's.
+  await insert('cz', 'rep1', {machineCount: 2, machineTypes: 'زينت'}); await insert('cy', 'rep2', {machineCount: 2});
+  await app.db.prepare("INSERT INTO crm_records(id,kind,parent_id,assigned_to,branch,data,created_at,updated_at,version) VALUES('gz','factory','cz','rep1','الرئيسي',?,?,?,1)").bind(JSON.stringify({name: 'ماكينات الشيت', recordType: 'group', quantity: 2, sourceMachineTypes: 'زينت', sourceFile: 'يورست.xlsx'}), stamp, stamp).run();
+  answer = await send('rep1', await edit('cz', {phone: '0500000001'}));
+  eq([answer.pendingApproval, 'machinesEntered' in (await stored('cz')).data], [true, false], 'another field, the machines untouched: a request, and no mark');
+  await send('rep1', {action: 'customer-edit', decision: 'cancel', id: answer.requestId});
+  answer = await send('rep1', await edit('cz', {machineCount: 3, machinesEntered: 'forged'}));
+  after = await stored('cz');
+  eq([answer.pendingApproval, after.data.machineCount, after.data.machineTypes, typeof after.data.machinesEntered, after.data.machinesEntered !== 'forged'], [undefined, 3, 'زينت', 'string', true], 'the representative\'s own customer, the count alone: saved directly, marked by the server (never by the page)');
+  eq((await audits('cz', 'customer-edit:capacity')).length, 1, 'recorded in its history as the direct capacity saves');
+  ok((await page('mgr')).records.find(row => row.id === 'cz').data.machineCount === 3, 'read back: 3 (over the imported group of 2)');
+  answer = await send('owner', await edit('cz', {phone: '0500000002'}));
+  eq([(await stored('cz')).data.phone, (await stored('cz')).data.machinesEntered], ['0500000002', after.data.machinesEntered], 'saved again for another field, the machines unchanged: the mark kept as it was');
+  answer = await send('rep1', await edit('cy', {machineCount: 5}));
+  eq([answer.pendingApproval, (await stored('cy')).data.machineCount], [true, 2], 'a colleague\'s customer: a request, nothing written');
+  await decide('sup', 'approve', answer.requestId); await decide('mgr', 'approve', answer.requestId);
+  after = await stored('cy');
+  eq([after.data.machineCount, typeof after.data.machinesEntered], [5, 'string'], 'approved: the count applied and marked');
+  answer = await send('owner', await edit('cz', {machineCount: null, machineTypes: ''}));
+  after = await stored('cz');
+  eq(['machineCount' in after.data, 'machineTypes' in after.data, 'machinesEntered' in after.data], [false, false, false], 'emptied by the administrator: no count, no types, no mark (the card counts the imported group again)');
+
   // ---- A new customer, online and queued on the device.
   const newCustomer = (who, data, extra = {}) => ({action: 'save', kind: 'customer', createKey: crypto.randomUUID(), data: {name: 'عميل جديد ' + crypto.randomUUID().slice(0, 6), region: 'الشرقية', city: 'الدمام', ...where, phone: '0500000002', ...data}, ...extra});
   answer = await send('rep1', newCustomer('rep1', {moldsInUse: '٢٥', productionCapacity: 'ألف بلكة', annualDemand: ''}));
