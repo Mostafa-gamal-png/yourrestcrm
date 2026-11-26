@@ -135,11 +135,12 @@ try {
   eq(await waiting('c1'), 0, 'no request');
 
   // A supervisor deactivated while a request waits for them: the sales manager may decide it, read live.
-  sent = await send('rep1', await edit('c1', {machineTypes: 'هيدروليك'}));
+  // (The supplier: since 2026-11-26 a representative's own customer's machine count and types are saved directly, lib/customer-capacity.ts.)
+  sent = await send('rep1', await edit('c1', {supplier: 'مورد هيدروليك'}));
   await app.db.prepare("UPDATE crm_members SET active=0 WHERE id='sup'").run();
   eq((await list('mgr')).requests.find(r => r.id === sent.requestId)?.stage, 'sales_manager', 'the supervisor deactivated: with the sales manager');
   await decide('mgr', 'approve', sent.requestId);
-  eq((await stored('c1')).data.machineTypes, 'هيدروليك', 'and approved by them');
+  eq((await stored('c1')).data.supplier, 'مورد هيدروليك', 'and approved by them');
   console.log(JSON.stringify({ok: true, checks, scope: 'customer edit requests over HTTP on the built release: the doors, both steps, the sales manager refused at the supervisor, reject with a reason, cancel, locked fields, a repeated send, stale, offline, a deactivated supervisor, the history', realBrowser: false}));
 } finally {
   await app.stop();
