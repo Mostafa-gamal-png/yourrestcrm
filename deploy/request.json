@@ -1,1 +1,1 @@
-{"mode":"diagnose","script":"scripts/diagnose/tracking-scope.cjs"}
+{"mode":"deploy","package":"deploy/packages/Yourrest-CRM-Update-Machines-20261126.zip","sha256":"93be0e4f15d79a92cdf0b13b6fb2f61bd3c5a22285a851f190615f10d5b23e3a","stage":"yourrest-crm-update-machines-20261126","helper":"yourrest-activate-update-machines.cjs"}
