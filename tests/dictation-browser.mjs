@@ -243,7 +243,7 @@ try {
     dialog = page.getByRole('dialog');
     await dialog.waitFor();
     await eventually(async () => !(await micIn(dialog, 'اسم المصنع').isDisabled()), 'the microphone is ready on the customer form');
-    check(await withoutMic(dialog, ['كود العميل في ERP', 'العنوان الوطني', 'اللوكيشن', 'فرع يورست المسؤول', 'عدد القوالب المستخدمة']), [], 'every free-text field of the customer form has its microphone, but for the ERP code, the branch, the national address, the coordinates and the molds in use (a number, typed like the other counts)');
+    check(await withoutMic(dialog, ['كود العميل في ERP', 'العنوان الوطني', 'اللوكيشن', 'فرع يورست المسؤول', 'عدد القوالب المستخدمة', 'عدد الماكينات']), [], 'every free-text field of the customer form has its microphone, but for the ERP code, the branch, the national address, the coordinates, the molds in use and the machines\' count (numbers, typed like the other counts; the count a field of every customer since 2026-11-26)');
     check(await dialog.locator('label', {hasText: 'كود العميل في ERP'}).locator('.voice-button').count(), 0, 'the ERP code stays typed');
     await page.evaluate(() => { window.__heard = 'مورد قوالب من الصوت'; });
     await tap(micIn(dialog, 'مورد القوالب والقطع'));
