@@ -7,7 +7,9 @@
 // interest chosen and saved directly; what the release before stored kept by the save; a status set to «خامل» in the form turns the size
 // to D at once; another branch's customer with its size and no interest, its correction sent for approval. A representative: their own
 // customer's interest read only, another's hidden but its computed size shown. The administrator: the marks on the desktop table, the
-// marketing officer's direct correction in the history (Arabic and English). On «الزيارات»: «قوة الفرصة» A to D, its filter offering D,
+// marketing officer's direct correction in the history (Arabic and English). A marketing officer of two regions (2026-11-28) changes their
+// branch's customer's region in the form directly, a region the customer's representative does not cover is refused in the form, another
+// branch's customer is still a request. On «الزيارات»: «قوة الفرصة» A to D, its filter offering D,
 // a visit graded D in its form with the owner's description under the field and saved, the table and the cards in both languages.
 // Nothing scrolls sideways, every field and filter is inside the screen, no Arabic is left in English but the data. Screenshots for the
 // report. Synthetic fixtures only.
@@ -25,7 +27,11 @@ const members = [
   {id: 'sup', role: 'supervisor', sup: 'mgr', region: 'eastern', name: 'المشرف سالم'},
   {id: 'rep', role: 'rep', sup: 'sup', region: 'eastern', name: 'المندوب أحمد'},
   {id: 'mkt', role: 'marketing', sup: 'sup', region: 'eastern', name: 'مسؤولة التسويق ريم'},
-  {id: 'repj', role: 'rep', sup: 'sup', region: 'eastern', branch: 'جدة', name: 'مندوب جدة'}
+  {id: 'repj', role: 'rep', sup: 'sup', region: 'eastern', branch: 'جدة', name: 'مندوب جدة'},
+  // Two regions (section 4: the region of their branch's customers, 2026-11-28).
+  {id: 'mktc', role: 'marketing', sup: 'sup', region: 'central,eastern', name: 'مسؤول تسويق المنطقتين'},
+  {id: 'repc', role: 'rep', sup: 'sup', region: 'central,eastern', name: 'مندوب المنطقتين'},
+  {id: 'repjc', role: 'rep', sup: 'sup', region: 'central,eastern', branch: 'جدة', name: 'مندوب جدة للمنطقتين'}
 ];
 const screenshots = process.env.YR_GATE_SCREENSHOT_DIR ? path.resolve(process.env.YR_GATE_SCREENSHOT_DIR) : fs.mkdtempSync(path.join(os.tmpdir(), 'yourrest-marketing-shots-'));
 fs.mkdirSync(screenshots, {recursive: true});
@@ -60,7 +66,7 @@ try {
   const stored = async id => JSON.parse((await app.db.prepare('SELECT data FROM crm_records WHERE id=?').bind(id).first()).data);
   browser = await chromium.launch({headless: true, ...(process.env.YR_BROWSER_EXECUTABLE ? {executablePath: process.env.YR_BROWSER_EXECUTABLE} : {}), args: ['--no-sandbox', '--ignore-certificate-errors', '--host-resolver-rules=MAP crm.yourrest.org 127.0.0.1', '--disable-dev-shm-usage']});
 
-  async function open(memberId, {english = false, viewport = SIZES['phone-360'], inApp = true, hash = '#customer'} = {}) {
+  async function open(memberId, {english = false, viewport = SIZES['phone-360'], inApp = true, hash = '#customer', scope = 'eastern'} = {}) {
     const touch = viewport.width < 1100;
     const context = await browser.newContext({ignoreHTTPSErrors: true, viewport, deviceScaleFactor: 1, reducedMotion: 'reduce', serviceWorkers: 'block', hasTouch: touch, geolocation: {latitude: 26.43, longitude: 50.03, accuracy: 8}, permissions: ['geolocation']});
     const cookie = await app.login(memberId), [name, ...value] = cookie.split('=');
@@ -69,7 +75,7 @@ try {
     const page = await context.newPage();
     page.setDefaultTimeout(20000);
     page.on('pageerror', error => errors.push(memberId + ': ' + error.message));
-    if (inApp) await installNativeBridge(page, {memberId, regionScope: 'eastern'});
+    if (inApp) await installNativeBridge(page, {memberId, regionScope: scope});
     await page.goto(app.origin + '/' + hash);
     if (english) await page.waitForFunction(() => document.documentElement.lang === 'en');
     await page.locator(hash === '#customer' ? '.customer-machines-page' : '.visits-table:visible, .rep-record-card:visible').first().waitFor();
@@ -320,6 +326,63 @@ try {
     await page.keyboard.press('Escape');
     await noSideways(page, 'the visits table, ' + (english ? 'en' : 'ar'));
     await shot(page, 'visits-table-desktop-' + (english ? 'en' : 'ar'));
+    await page.context().close();
+  }
+
+  // ---- 4. A marketing officer of two regions changes the region of their branch's customer directly (the owner, 2026-11-28: «عايز ادى صلاحية
+  // تغيير المنطقة للمسوق»): the two regions offered, saved at once with no approval note; a region the customer's representative does not
+  // cover refused in the form with the server's words and nothing changed; another branch's customer still a request.
+  const MID = 'مصنع المنطقتين', COAST = 'مصنع الساحل', NORTH = 'مصنع جدة الشمالي';
+  await customer('c6', MID, 'repc'); await customer('c7', COAST, 'rep'); await customer('c8', NORTH, 'repjc', {}, 'جدة');
+  const regionChoices = dialog => dialog.locator('.customer-region-field label.customer-choice');
+  const chooseRegion = (dialog, name) => regionChoices(dialog).filter({hasText: new RegExp('^\\s*' + name + '\\s*$')}).click();
+  page = await open('mktc', {scope: 'central,eastern'});
+  sheet = await openSheet(page, MID);
+  dialog = await openForm(page, sheet);
+  check([await dialog.locator('[data-customer-edit-note]').count(), await dialog.locator('.customer-region-field').evaluate(node => node.disabled), (await regionChoices(dialog).allInnerTexts()).map(text => text.trim())], [0, false, ['الشرقية', 'الوسطى']], 'their branch\'s customer: no approval note, their two regions offered');
+  check(await dialog.locator('button[type=submit]').innerText().then(text => text.includes('إرسال التعديل للموافقة')), false, 'the button saves, it sends no request');
+  await chooseRegion(dialog, 'الوسطى');
+  await dialog.getByRole('textbox', {name: 'المدينة', exact: true}).fill('الرياض');
+  await allInside(regionChoices(dialog), 'the region choices, 360');
+  await noSideways(page, 'the form with the region, 360');
+  await shot(page, 'marketing-region-form-ar-360');
+  let regionSave = page.waitForResponse(response => new URL(response.url()).pathname === '/api/crm' && response.request().method() === 'POST');
+  await dialog.locator('button[type=submit]').click();
+  const regionReply = await regionSave;
+  check([regionReply.status(), (await regionReply.json()).pendingApproval], [200, undefined], 'saved directly');
+  await dialog.waitFor({state: 'detached'});
+  check([(await stored('c6')).region, (await stored('c6')).city, (await stored('c6')).assignedTo], ['الوسطى', 'الرياض', 'repc'], 'the new region and city stored at once; the representative stays');
+  // A region the customer's representative does not cover (rep: the eastern region only): the server's refusal in the form.
+  sheet = await openSheet(page, COAST);
+  dialog = await openForm(page, sheet);
+  await chooseRegion(dialog, 'الوسطى');
+  await dialog.getByRole('textbox', {name: 'المدينة', exact: true}).fill('الرياض');
+  regionSave = page.waitForResponse(response => new URL(response.url()).pathname === '/api/crm' && response.request().method() === 'POST');
+  await dialog.locator('button[type=submit]').click();
+  check((await regionSave).status(), 400, 'refused by the server');
+  await dialog.locator('.form-error').waitFor();
+  check([await dialog.locator('.form-error').innerText(), (await stored('c7')).region], ['منطقة العميل لا تطابق صلاحية المندوب المسؤول', 'الشرقية'], 'the reason shown in the form; the customer unchanged');
+  await shot(page, 'marketing-region-refused-ar-360');
+  await closeAll(page);
+  // Another branch's customer (Jeddah's, in their regions): still a request.
+  sheet = await openSheet(page, NORTH);
+  dialog = await openForm(page, sheet);
+  check([await dialog.locator('[data-customer-edit-note]').count(), await dialog.locator('button[type=submit]').innerText().then(text => text.includes('إرسال التعديل للموافقة'))], [1, true], 'another branch\'s customer: the approval note and a request');
+  await closeAll(page);
+  await page.context().close();
+  // The form with the region at the narrowest phone and on a desktop, in Arabic and in English.
+  for (const [label, viewport] of [['phone-320', SIZES['phone-320']], ['desktop', SIZES.desktop]]) for (const english of [false, true]) {
+    const tag = label + '-' + (english ? 'en' : 'ar');
+    page = await open('mktc', {scope: 'central,eastern', english, viewport});
+    sheet = await openSheet(page, MID, english);
+    dialog = await openForm(page, sheet, english);
+    await allInside(regionChoices(dialog), 'the region choices, ' + tag);
+    await noSideways(page, 'the form with the region, ' + tag);
+    if (english) {
+      check((await regionChoices(dialog).allInnerTexts()).map(text => text.trim()), ['Eastern', 'Central'], 'the regions in English, ' + tag);
+      await noArabic(dialog.locator('.customer-region-field'), 'the region field, ' + tag);
+    }
+    await shot(page, 'marketing-region-form-' + tag);
     await page.context().close();
   }
 
