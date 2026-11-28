@@ -1,8 +1,9 @@
 // «مسؤول تسويق» (lib/roles.ts, the owner, 2026-11-18) and the customer classifications (lib/customer-classification.ts) over real HTTP
 // against the BUILT release (run `pnpm build` first): the team screen adds a member of the new role (the administrator only); the marketing
 // officer corrects another representative's customer of their branch and region directly (no approval request; the history names them
-// and every changed field before and after), another branch's customer of their regions and a change of a customer's region through a
-// request to their supervisor as a representative's (the review of 2026-11-18), never another region's, the routing or a deletion (not
+// and every changed field before and after), the customer's region too (the owner, 2026-11-28: into one of their own regions that the
+// customer's representative covers, else refused), another branch's customer of their regions through a request to their supervisor as
+// a representative's (the review of 2026-11-18), never another region's, the routing or a deletion (not
 // even when «حذف عميل» is sent for them); the classifications as the owner corrected them the same day: «اهتمام العميل» by hand (a
 // representative and customer service refused, a representative's request never carrying it, a supervisor's waiting for the sales
 // manager, the sales manager's and the administrator's direct, an unknown value refused, null empty), no grade, notes or size by hand,
@@ -96,14 +97,28 @@ try {
   eq((await send('sup', {action: 'customer-edit', decision: 'approve', id: answer.requestId})).stage, 'sales_manager', 'passed on');
   eq((await send('mgr', {action: 'customer-edit', decision: 'approve', id: answer.requestId})).status, 'approved', 'approved');
   eq((await stored('cj')).data.city, 'جدة', 'applied');
-  // A change of the customer's region: a request too, as a whole edit; the same region is direct.
+  // A change of the region of their own branch's customer: direct too (the owner, 2026-11-28: «عايز ادى صلاحية تغيير المنطقة للمسوق»), into
+  // one of their own regions that the customer's representative covers; never the representative or the branch with it.
   before = await stored('cr');
   answer = await send('mktc', await edit('cr', {region: 'الوسطى', city: 'الرياض'}));
-  eq([answer.pendingApproval, answer.approvalStage], [true, 'supervisor'], 'a new region waits for the supervisor');
-  eq(await stored('cr'), before, 'not the region, not the city with it, while it waits');
-  eq((await waiting('cr')).map(request => [...request.fields].sort()), [['city', 'region']], 'one request for the whole edit');
-  await send('mktc', {action: 'customer-edit', decision: 'cancel', id: answer.requestId});
-  eq((await send('mktc', await edit('cr', {city: 'الخبر'}))).pendingApproval, undefined, 'the same region: direct');
+  eq([answer.ok, answer.pendingApproval], [true, undefined], 'a new region of their branch\'s customer: saved directly');
+  after = await stored('cr');
+  eq([after.data.region, after.data.city, after.version, after.assigned_to, after.branch], ['الوسطى', 'الرياض', before.version + 1, 'mktc', 'الرئيسي'], 'the region and the city at once; the routing stays');
+  eq((await waiting('cr')).length, 0, 'no request waits');
+  const moved = (await page('mgr')).audits.filter(audit => audit.recordId === 'cr' && audit.actor === 'مسؤول تسويق المنطقتين');
+  eq([moved.length, moved[0]?.action], [1, DIRECT], 'the history names who moved it');
+  eq(moved[0].changes.filter(change => change.field === 'region'), [{field: 'region', before: 'الشرقية', after: 'الوسطى'}], 'and the region before and after');
+  before = await stored('c1');
+  let refused = await send('mktc', await edit('c1', {region: 'الوسطى', city: 'الرياض'}), 400);
+  eq([refused.error, await stored('c1')], ['منطقة العميل لا تطابق صلاحية المندوب المسؤول', before], 'a region the customer\'s representative does not cover: refused, nothing changed');
+  refused = await send('mkt', await edit('c1', {region: 'الوسطى', city: 'الرياض'}), 403);
+  eq([refused.error, await stored('c1')], ['لا يمكنك إنشاء أو نقل عميل خارج منطقتك المسموح بها', before], 'a region outside their own: refused, nothing changed');
+  before = await stored('cr');
+  await send('mktc', await edit('cr', {region: 'الشرقية', assignedTo: 'rep1'}), 403);
+  await send('mktc', await edit('cr', {region: 'الشرقية', branch: 'جدة'}), 403);
+  eq(await stored('cr'), before, 'never the representative or the branch with the region');
+  eq((await send('mktc', await edit('cr', {region: 'الشرقية', city: 'الخبر'}))).pendingApproval, undefined, 'and back: direct');
+  eq([(await stored('cr')).data.region, (await waiting('cr')).length], ['الشرقية', 0], 'back in its region, nothing waiting');
   await send('mkt', await edit('cw', {city: 'جدة'}), 404);
   await send('mkt', await edit('c2', {assignedTo: 'mkt'}), 403);
   await send('mkt', await edit('c2', {branch: 'جدة'}), 403);

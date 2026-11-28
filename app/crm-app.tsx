@@ -638,9 +638,9 @@ export default function CRM() {
     ][], disabled = false, required = false) => <label className="field"><span>{t(label)}{required && <b> *</b>}</span><Pick value={String(form?.data[k] ?? '')} onChange={v => setField(k, v)} options={options} label={t(label)} disabled={disabled}/></label>;
     const customerRoutingLocked=!!form?.row&&(!manage||!!form.row.data._masterRoutingReadOnly);
     // «طلبات تعديل بيانات العميل» (lib/customer-edit-requests.ts): a representative's, a supervisor's or customer service's correction is sent for approval.
-    // A marketing officer's correction waits as a representative's when the customer is another branch's or the edit changes its region
-    // (lib/customer-edit-requests.ts marketingCorrectionWaits, the server's same rule); otherwise it is saved directly.
-    const customerEditRequest=!!form?.row&&form.kind==='customer'&&!!me&&(proposesCustomerEdit(me.role)||marketingCorrectionWaits(me,form.row,form.data.region));
+    // A marketing officer's correction waits as a representative's when the customer is another branch's (lib/customer-edit-requests.ts
+    // marketingCorrectionWaits, the server's same rule); otherwise it is saved directly, a change of region included (2026-11-28).
+    const customerEditRequest=!!form?.row&&form.kind==='customer'&&!!me&&(proposesCustomerEdit(me.role)||marketingCorrectionWaits(me,form.row));
     // «الطاقة الإنتاجية والاحتياج» (lib/customer-capacity.ts capacityEditIsDirect, the server's same rule): a representative's or a marketing
     // officer's change of those three fields alone, on a customer assigned to them, is saved directly; the section says so.
     const formCapacityDirect=customerEditRequest&&!!me&&isFieldRole(me.role)&&form?.row?.assignedTo===me.id;

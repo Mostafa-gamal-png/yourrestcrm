@@ -65,13 +65,12 @@ export type CustomerEditList={me:string;waiting:number;requests:CustomerEditRequ
 /** The administrator and the sales manager edit a customer directly and decide requests; whoever else could edit one sends a request. */
 export const directCustomerEditRole=(role:string)=>role==='admin'||role==='manager';
 export const proposesCustomerEdit=(role:string)=>['rep','supervisor','customer_service','customer_service_manager'].includes(role);
-/** A marketing officer (lib/roles.ts) corrects their own branch's customers directly; their correction waits, as a representative's, when
- *  the customer is another branch's (in their regions), or when it changes the customer's region (the region is routing, as for a
- *  representative): the whole edit is then a request (review of 2026-11-18). nextRegion: the region the save would store. */
-export function marketingCorrectionWaits(me:Pick<Member,'role'|'branch'>,customer:{branch:string;data?:Record<string,unknown>|null},nextRegion:unknown){
- if(!isMarketingRole(me.role))return false;
- const region=(value:unknown)=>typeof value==='string'?value.trim():'';
- return customer.branch!==me.branch||region(nextRegion)!==region(customer.data?.region);
+/** A marketing officer (lib/roles.ts) corrects their own branch's customers directly, their region included (the owner, 2026-11-28: «عايز ادى
+ *  صلاحية تغيير المنطقة للمسوق»; before, a change of region waited as a representative's); their correction waits, as a representative's,
+ *  only when the customer is another branch's (in their regions). The new region is still bounded by the server: inside the officer's own
+ *  regions, and covered by the customer's representative (app/api/crm/route.ts; the officer never reassigns). */
+export function marketingCorrectionWaits(me:Pick<Member,'role'|'branch'>,customer:{branch:string}){
+ return isMarketingRole(me.role)&&customer.branch!==me.branch;
 }
 
 type Who=Pick<Member,'id'|'role'|'active'|'supervisorId'>;

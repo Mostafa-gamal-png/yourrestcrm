@@ -193,7 +193,7 @@ eq(edits.CUSTOMER_EDIT_FIELDS.some(field=>edits.CUSTOMER_EDIT_LOCKED.includes(fi
 // ---- The matrix explains it (restrict-only: «العملاء · تحرير» still decides; no new cell).
 const editCell=permissions.permissionRow('customer').cells.edit;
 ok(editCell.roleNote.rep.ar.includes('الطاقة الإنتاجية والاحتياج')&&editCell.roleNote.rep.ar.includes('مباشرةً'),'the representative\'s note says the three are saved directly');
-ok(editCell.roleNote.marketing.ar.includes('الطاقة الإنتاجية والاحتياج')&&editCell.roleNote.marketing.ar.includes('عميل فرع آخر أو تغيير منطقة العميل طلبٌ ينتظر الموافقة'),'the marketing officer\'s note, its earlier words kept');
+ok(editCell.roleNote.marketing.ar.includes('الطاقة الإنتاجية والاحتياج')&&editCell.roleNote.marketing.ar.includes('وتعديل عميل فرع آخر طلبٌ ينتظر الموافقة'),'the marketing officer\'s note, its earlier words kept');
 eq([ARABIC.test(editCell.roleNote.rep.en),ARABIC.test(editCell.roleNote.marketing.en.replace(/«[^»]*»/g,''))],[false,false],'both in English');
 eq(Object.keys(permissions.permissionRow('customer').cells),['add','edit','delete','export','import'],'no new cell');
 

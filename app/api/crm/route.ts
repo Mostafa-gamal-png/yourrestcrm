@@ -283,10 +283,11 @@ async function saveRecord(c:Awaited<ReturnType<typeof context>>,body:Record<stri
   else if(parent?.data.technicalStatus!=='approved')throw new CRMError('يجب اعتماد مواصفات القالب فنيًا قبل إنشاء عرض السعر');
   data.number=old?.data.number||`YR-${today().slice(0,4)}-${crypto.randomUUID().slice(0,8).toUpperCase()}`;Object.assign(data,quoteTotals(data.items,data.discount,data.taxRate));
  }
- // A marketing officer's correction of another branch's customer (in their regions), or one that changes a customer's region, waits as
- // a representative's (lib/customer-edit-requests.ts marketingCorrectionWaits), gated as a representative's is: the member as they are and
- // the customer at the version they read (accessGuard). Their own branch's other corrections are written directly (marketingCustomerGuard).
- const marketingWaits=kind==='customer'&&!!old&&body.action==='save'&&!approval&&marketingCorrectionWaits(c.me,old,data.region);
+ // A marketing officer's correction of another branch's customer (in their regions) waits as a representative's (lib/customer-edit-requests.ts
+ // marketingCorrectionWaits), gated as a representative's is: the member as they are and the customer at the version they read (accessGuard).
+ // Their own branch's corrections are written directly (marketingCustomerGuard), a change of region included since 2026-11-28: the new region
+ // was checked above against their own regions and against the customer's representative, whom they never change.
+ const marketingWaits=kind==='customer'&&!!old&&body.action==='save'&&!approval&&marketingCorrectionWaits(c.me,old);
  // «الطاقة الإنتاجية والاحتياج» (lib/customer-capacity.ts, the owner, 2026-11-21): a representative's or a marketing officer's correction that
  // would wait, but changes only the three entered fields (what a request would hold: customerEditProposal) of a customer assigned to them, is
  // written directly: the stored customer with those three fields over it and nothing else of the save, gated as their correction is (the

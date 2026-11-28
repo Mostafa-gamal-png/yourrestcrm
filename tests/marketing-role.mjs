@@ -94,11 +94,11 @@ const customers={own:C('own','mkt'),rep:C('c-rep','rep'),rep2:C('c-rep2','rep2')
 const matrix=(fn,who)=>Object.fromEntries(Object.entries(customers).map(([key,row])=>[key,fn(row,members,byId(who))]));
 eq(matrix(access.canEditCustomerDetails,'mkt'),{own:true,rep:true,rep2:true,sup:true,jeddah:true,mgr:true},'a marketing officer corrects every customer of their regions, as a representative (another branch\'s through a request: the review of 2026-11-18)');
 eq(matrix(access.canEditCustomerDetails,'mktJ'),{own:true,rep:true,rep2:true,sup:true,jeddah:true,mgr:true},'the officer of Jeddah too');
-// What waits (lib/customer-edit-requests.ts marketingCorrectionWaits): another branch's customer, or a change of the customer's region.
-const mkt=byId('mkt'),regionOf=region=>({...customers.rep,data:{...customers.rep.data,region}});
-eq([editRules.marketingCorrectionWaits(mkt,customers.rep,'الشرقية'),editRules.marketingCorrectionWaits(mkt,customers.rep,' الشرقية '),editRules.marketingCorrectionWaits(mkt,customers.jeddah,'الشرقية'),editRules.marketingCorrectionWaits(mkt,customers.rep,'الوسطى'),editRules.marketingCorrectionWaits(mkt,customers.rep,'')],[false,false,true,true,true],'a marketing officer: their branch\'s customer directly; another branch\'s, or a new region (or none), waits');
-eq([editRules.marketingCorrectionWaits(mkt,regionOf(undefined),''),editRules.marketingCorrectionWaits(mkt,regionOf(undefined),undefined),editRules.marketingCorrectionWaits(mkt,regionOf(undefined),'الشرقية')],[false,false,true],'no region before and none after is no change; one set where there was none is');
-eq(['rep','supervisor','manager','admin','customer_service'].map(role=>editRules.marketingCorrectionWaits({role,branch:'الرئيسي'},customers.jeddah,'الوسطى')),[false,false,false,false,false],'the rule is the marketing officer\'s alone (the others have their own)');
+// What waits (lib/customer-edit-requests.ts marketingCorrectionWaits): another branch's customer only; since 2026-11-28 (the owner: «عايز ادى
+// صلاحية تغيير المنطقة للمسوق») a change of their branch's customer's region is saved directly (the server bounds the new region).
+const mkt=byId('mkt');
+eq([editRules.marketingCorrectionWaits(mkt,customers.rep),editRules.marketingCorrectionWaits(mkt,customers.jeddah)],[false,true],'a marketing officer: their branch\'s customer directly, whatever its region; another branch\'s waits');
+eq(['rep','supervisor','manager','admin','customer_service'].map(role=>editRules.marketingCorrectionWaits({role,branch:'الرئيسي'},customers.jeddah)),[false,false,false,false,false],'the rule is the marketing officer\'s alone (the others have their own)');
 eq(matrix(access.canEditCustomerDetails,'rep'),{own:true,rep:true,rep2:true,sup:true,jeddah:true,mgr:true},'a representative proposes a correction for any customer of their regions, as before');
 eq(matrix(access.canClassifyCustomer,'mkt'),{own:true,rep:true,rep2:true,sup:true,jeddah:false,mgr:true},'a marketing officer classifies every customer of their branch');
 eq(matrix(access.canClassifyCustomer,'sup'),{own:true,rep:true,rep2:false,sup:true,jeddah:true,mgr:false},'a supervisor classifies their team\'s customers only');
@@ -144,7 +144,7 @@ eq(permissions.can({role:'marketing',access:permissions.memberAccess('marketing'
 eq(permissions.trashScopeOf({role:'marketing',access:permissions.memberAccess('marketing',{permissions:JSON.stringify({'activity:delete':true}),hidden:'[]',version:2})}),'own','«المحذوفات» with «حذف زيارة», their own deletions');
 eq(permissions.trashScopeOf({role:'marketing',access:permissions.memberAccess('marketing',null)}),null,'none by default');
 ok(permissions.permissionRow('customer').cells.edit.roleNote.marketing.ar.includes('مباشرةً'),'the matrix explains the direct correction for the role');
-ok(permissions.permissionRow('customer').cells.edit.roleNote.marketing.ar.includes('عميل فرع آخر أو تغيير منطقة العميل طلبٌ ينتظر الموافقة'),'and what waits for approval (the review of 2026-11-18)');
+ok(permissions.permissionRow('customer').cells.edit.roleNote.marketing.ar.includes('وتعديل عميل فرع آخر طلبٌ ينتظر الموافقة')&&permissions.permissionRow('customer').cells.edit.roleNote.marketing.ar.includes('ويغيّر منطقة عملاء فرعه مباشرةً'),'and what waits for approval (another branch\'s customer), the region of their own being direct since 2026-11-28');
 ok(!ARABIC.test(permissions.permissionRow('customer').cells.edit.roleNote.marketing.en),'and in English');
 eq(permissions.viewAllAvailable('marketing'),false,'no «عرض بيانات الفريق بالكامل»');
 eq(permissions.copyPermissions({role:'rep',stored:permissions.normalizePermissions('rep',{cells:{'customer:delete':true}})},'marketing').skipped,['customer:delete'],'copying a representative\'s «حذف عميل» to a marketing officer is skipped and named');
@@ -155,7 +155,7 @@ eq(editRules.directCustomerEditRole('marketing'),false,'and decides none');
 for(const field of classification.CLASSIFICATION_FIELDS)ok(editRules.CUSTOMER_EDIT_FIELDS.includes(field),field+' can travel in a supervisor\'s request');
 eq(editRules.customerEditProposal({name:'x',customerInterest:'price'},{name:'x',customerInterest:'trust'}).fields,['customerInterest'],'a change of the interest is a request field');
 eq(editRules.CUSTOMER_EDIT_CODE_FIELDS.has('factorySize'),true,'shown with its words in the list of requests');
-eq(editRules.activeSupervisorOf('mkt',members)?.id,'sup','a marketing officer\'s request (another branch\'s customer, a new region) waits for their supervisor first, as a representative\'s');
+eq(editRules.activeSupervisorOf('mkt',members)?.id,'sup','a marketing officer\'s request (another branch\'s customer) waits for their supervisor first, as a representative\'s');
 eq(editRules.firstStage('mkt',members),'supervisor','its first stage');
 eq(editRules.activeSupervisorOf('mkt',members.map(member=>member.id==='sup'?{...member,active:0}:member)),undefined,'with no active supervisor it goes to the sales manager');
 eq(editRules.CUSTOMER_EDIT_HISTORY[editRules.DIRECT_EDIT],'تعديل مسؤول التسويق لبيانات العميل','the history\'s words for a marketing officer\'s direct correction');
@@ -383,17 +383,29 @@ const fromPage=await post('mkt',{action:'save',kind:'customer',id:'c-jeddah',ver
 eq(waiting('c-jeddah').find(request=>request.id===fromPage.requestId).fields,['phone'],'the request from the page asks for the phone only');
 await post('sup',{action:'customer-edit',decision:'approve',id:fromPage.requestId});await post('mgr',{action:'customer-edit',decision:'approve',id:fromPage.requestId});
 eq([row('c-jeddah').data.phone,row('c-jeddah').data.customerInterest,Object.keys(row('c-jeddah').data).filter(key=>key.startsWith('_classification'))],['0577777777','price',[]],'approved: the phone changed, the interest kept, no marker stored');
-// A change of the customer's region waits too (the review of 2026-11-18: it was written at once), as one whole edit.
+// A change of their branch's customer's region is saved directly since 2026-11-28 (the owner: «عايز ادى صلاحية تغيير المنطقة للمسوق»; from
+// 2026-11-18 it waited), bounded by the server: one of the officer's regions, covered by the customer's representative, recorded with
+// what it changed. A representative's change of region still waits.
 const regionsLib=await lib('regions');
 sql.prepare("UPDATE crm_members SET region_scope=? WHERE id IN ('mkt','rep')").run(regionsLib.canonicalRegionScope(['eastern','central']));
-before=JSON.stringify(raw('c-rep'));
 const moved=await post('mkt',edit('c-rep',{region:'الوسطى',city:'الرياض'}));
-eq([moved.pendingApproval,moved.approvalStage],[true,'supervisor'],'a new region: a request, to the supervisor first');
-eq(JSON.stringify(raw('c-rep')),before,'nothing changes while it waits: not the region, not the city with it');
-eq(waiting('c-rep').map(request=>[...request.fields].sort()),[['city','region']],'the request carries the whole edit');
-eq(audits('c-rep',editRules.DIRECT_EDIT).length,0,'nothing is written directly');
-await post('mkt',{action:'customer-edit',decision:'cancel',id:moved.requestId});
-await post('mkt',edit('c-rep',{city:'الرياض'}));eq([row('c-rep').data.city,row('c-rep').data.region],['الرياض','الشرقية'],'the same region: direct, as before');
+eq([moved.pendingApproval,row('c-rep').data.region,row('c-rep').data.city,row('c-rep').assigned_to,waiting('c-rep').length],[undefined,'الوسطى','الرياض','rep',0],'a new region of their branch\'s customer: saved directly, the representative kept, no request');
+const movedHistory=audits('c-rep',editRules.DIRECT_EDIT).map(entry=>JSON.parse(entry.detail)).at(-1);
+eq([...movedHistory.fields].sort(),['city','region'],'recorded in the customer\'s history with what it changed');
+eq([movedHistory.values.region,movedHistory.base.region],['الوسطى','الشرقية'],'the region before and after');
+let refusal=await post('mkt',edit('c-rep',{region:'الغربية'}),403);
+eq([refusal.error,row('c-rep').data.region],['لا يمكنك إنشاء أو نقل عميل خارج منطقتك المسموح بها','الوسطى'],'a region outside the officer\'s own: refused, nothing written');
+sql.prepare("UPDATE crm_members SET region_scope='central' WHERE id='rep'").run();
+refusal=await post('mkt',edit('c-rep',{region:'الشرقية'}),400);
+eq([refusal.error,row('c-rep').data.region],['منطقة العميل لا تطابق صلاحية المندوب المسؤول','الوسطى'],'a region the customer\'s representative does not cover: refused (the officer cannot reassign)');
+sql.prepare("UPDATE crm_members SET region_scope=? WHERE id='rep'").run(regionsLib.canonicalRegionScope(['eastern','central']));
+const repMove=await post('rep',edit('c-rep',{region:'الشرقية'}));
+eq([repMove.pendingApproval,row('c-rep').data.region],[true,'الوسطى'],'a representative\'s change of region still waits for approval');
+await post('rep',{action:'customer-edit',decision:'cancel',id:repMove.requestId});
+const routing=await post('mkt',edit('c-rep',{region:'الشرقية',assignedTo:'mkt',branch:'جدة'}),403);
+eq([routing.error,row('c-rep').data.region,row('c-rep').assigned_to,row('c-rep').branch],['لا يمكنك تغيير مسؤول العميل أو فرعه','الوسطى','rep','الرئيسي'],'a new region sent with another representative or branch: refused whole, nothing written');
+eq([(await post('mkt',edit('c-rep',{region:'الشرقية'}))).pendingApproval,row('c-rep').data.region],[undefined,'الشرقية'],'the region back alone: saved directly');
+await post('mkt',edit('c-rep',{city:'الدمام'}));eq([row('c-rep').data.city,row('c-rep').data.region],['الدمام','الشرقية'],'the same region: direct, as before');
 sql.prepare("UPDATE crm_members SET region_scope='eastern' WHERE id IN ('mkt','rep')").run();
 
 // A new customer: a marketing officer's own, with its interest; saved on the device first (the offline queue replays the same body). A

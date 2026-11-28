@@ -4,6 +4,14 @@ Cumulative per-release notes carried over verbatim from the previous `README.md`
 competitor-workspace and competitor-intelligence notes appeared three times) were removed; nothing else was changed.
 Arabic operating notes for individual updates live in `docs/UPDATE-*-AR.txt`; verification evidence in `docs/*VERIFICATION*.json`.
 
+## A marketing officer changes their branch's customers' region directly (2026-11-28, no migration)
+
+- **Asked.** The owner: «عايز ادى صلاحية تغيير المنطقة للمسوق». Guide 9-أش.
+- **What changed.** `marketingCorrectionWaits` (`lib/customer-edit-requests.ts`) now waits only for another branch's customer; a marketing
+  officer's correction of their own branch's customer is saved directly, a new region included. The server still bounds the region: one
+  of the officer's own regions (403 otherwise) and covered by the customer's representative (400 otherwise); the representative and the
+  branch never move with it (403). The history records the region before and after. A representative's change of region still waits.
+
 ## The machines' count and types, a field of every customer's form (2026-11-26, no migration)
 
 - **Asked.** The owner, with two forms that differed: «عايز كله زى بعضه فى فورم واحد زى التانى والمندوب او المسوق يقدر يعدل بيانات عملاءه». Guide 9-أر.
